@@ -668,6 +668,31 @@ void KineticCalculator::_reset() {
   CASM::log().set_verbosity(this->verbosity_level);
 
   auto &log = CASM::log();
+
+  // system check:
+  {
+    auto it = this->system->clex_data.find("entropy");
+    bool found_entropy = (it != this->system->clex_data.end());
+
+    log.read<Log::standard>("System parameters");
+    if (!found_entropy) {
+      log.verbatim(
+          "No \"entropy\" clex found:                                        \n"
+          "- Event rates will be calculated without a change in entropy.     \n"
+          "- A local cluster expansion will be used for the attempt          \n"
+          "  frequency.\n");
+    } else {
+      log.verbatim(
+          "Found \"entropy\" clex:                                           \n"
+          "- Event rates will be calculated using the change in entropy.     \n"
+          "- A local cluster expansion will be used for the kinetically-     \n"
+          "  resolved activation entropy.\n");
+    }
+    log << std::endl;
+  }
+
+  // read other parameters
+
   log.read<Log::standard>("KineticCalculator parameters");
   log.indent() << "verbosity=" << this->verbosity_level << std::endl;
 

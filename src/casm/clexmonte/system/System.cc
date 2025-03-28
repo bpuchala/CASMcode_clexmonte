@@ -179,8 +179,6 @@ SupercellSystemData::SupercellSystemData(
 // data, in this case System, and templated CASM::clexmonte methods such as
 // sampling function factory methods ---
 
-namespace {
-
 /// \brief Helper to get SupercellSystemData,
 ///     constructing as necessary
 SupercellSystemData &get_supercell_data(
@@ -205,8 +203,6 @@ SupercellSystemData &get_supercell_data(System &system,
   auto const &T = get_transformation_matrix_to_super(state);
   return get_supercell_data(system, T);
 }
-
-}  // namespace
 
 /// \brief Helper to get std::shared_ptr<config::Prim const>
 std::shared_ptr<config::Prim const> const &get_prim_info(System const &system) {

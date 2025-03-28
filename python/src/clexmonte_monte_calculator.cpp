@@ -961,6 +961,25 @@ PYBIND11_MODULE(_clexmonte_monte_calculator, m) {
           access it will raise an exception.
           )pbdoc")
       .def_property_readonly(
+          "entropy_delta_corr",
+          [](clexmonte::EventState const &self) {
+            if (self.entropy_delta_corr == nullptr) {
+              throw std::runtime_error(
+                  "Error in EventState.entropy_delta_corr: "
+                  "not calculated.");
+            }
+            return *self.entropy_delta_corr;
+          },
+          R"pbdoc(
+          numpy.ndarray[numpy.float[corr_size,]]: Change in entropy
+          correlations if event occurs.
+
+          This is a readonly property that is only set by the default
+          event state calculation method. If it has not been set, attempting to
+          access it will raise an exception. This property is only set if
+          an entropy cluster expansion has been included in the system.
+          )pbdoc")
+      .def_property_readonly(
           "local_corr",
           [](clexmonte::EventState const &self) {
             if (self.local_corr == nullptr) {
@@ -1002,6 +1021,28 @@ PYBIND11_MODULE(_clexmonte_monte_calculator, m) {
                      R"pbdoc(
           float: Activated state energy, relative to initial state
           )pbdoc")
+      .def_readwrite("dS_final", &clexmonte::EventState::dS_final,
+                     R"pbdoc(
+          float: Final state entropy, relative to initial state (if calculated).
+
+          This value is only calculated if an entropy cluster expansion has been
+          included in the system, otherwise it is zero.
+          )pbdoc")
+      .def_readwrite("Skra", &clexmonte::EventState::Skra,
+                     R"pbdoc(
+          float: KRA entropy (if calculated).
+
+          This value is only calculated if an entropy cluster expansion has been
+          included in the system, otherwise it is zero.
+          )pbdoc")
+      .def_readwrite("dS_activated", &clexmonte::EventState::dE_activated,
+                     R"pbdoc(
+          float: Activated state entropy, relative to initial state (if
+          calculated).
+
+          This value is only calculated if an entropy cluster expansion has been
+          included in the system, otherwise it is zero.
+          )pbdoc")
       .def_readwrite("freq", &clexmonte::EventState::freq,
                      R"pbdoc(
           float: Attempt frequency (1/s)
@@ -1009,6 +1050,20 @@ PYBIND11_MODULE(_clexmonte_monte_calculator, m) {
       .def_readwrite("rate", &clexmonte::EventState::rate,
                      R"pbdoc(
           float: Event rate (1/s)
+          )pbdoc")
+      .def_readwrite("d_generalized_enthalpy_final",
+                     &clexmonte::EventState::d_generalized_enthalpy_final,
+                     R"pbdoc(
+          float: Final state free energy, relative to initial state.
+          )pbdoc")
+      .def_readwrite("d_generalized_enthalpy_activated",
+                     &clexmonte::EventState::d_generalized_enthalpy_final,
+                     R"pbdoc(
+          float: Activated state free energy, relative to initial state.
+          )pbdoc")
+      .def_readwrite("reverse_rate", &clexmonte::EventState::reverse_rate,
+                     R"pbdoc(
+          float: Rate of the reverse event (1/s)
           )pbdoc")
       .def(
           "to_dict",

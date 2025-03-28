@@ -285,8 +285,9 @@ bool parse_event(
 ///
 ///            "/path/to/basis_sets/bset.energy/basis.json"
 ///
-///        The "basis" input is required for the "formation_energy" basis set
-///        for kinetic Monte Carlo only.
+///        The "basis" input is required for the "formation_energy" and
+///        "entropy" basis sets when performing kinetic Monte Carlo
+///        simulations.
 ///
 ///
 ///   "local_basis_sets": object (optional)
@@ -1030,6 +1031,21 @@ void parse(InputParser<System> &parser, std::vector<fs::path> search_path,
         log.indent() << "- Found cluster_info from '"
                      << clex_data.basis_set_name
                      << "' \"basis\" input (required for KMC)" << std::endl;
+      }
+
+      // check that if "entropy" is provided it also has the `basis` input
+      {
+        auto it = system.clex_data.find("entropy");
+        if (it != system.clex_data.end() && !it->second.cluster_info) {
+          log.indent() << "- Error: no \"basis\" input for '"
+                       << it->second.basis_set_name << "' (required for KMC)"
+                       << std::endl;
+          std::stringstream ss;
+          ss << "Warning: no \"basis\" input for basis_set '"
+             << it->second.basis_set_name << "' (required for KMC)"
+             << std::endl;
+          parser.insert_warning("kmc_events", ss.str());
+        }
       }
 
       // parse "kmc_events"/<name>

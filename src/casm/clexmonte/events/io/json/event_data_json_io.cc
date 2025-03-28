@@ -25,6 +25,14 @@ jsonParser &to_json(EventState const &event_state, jsonParser &json) {
     json["dE_activated"] = event_state.dE_activated;
     json["freq"] = event_state.freq;
     json["rate"] = event_state.rate;
+    json["d_generalized_enthalpy_final"] =
+        event_state.d_generalized_enthalpy_final;
+    json["d_generalized_enthalpy_activated"] =
+        event_state.d_generalized_enthalpy_activated;
+    json["reverse_rate"] = event_state.reverse_rate;
+    json["dS_final"] = event_state.dS_final;
+    json["Skra"] = event_state.Skra;
+    json["dS_activated"] = event_state.dS_activated;
   }
   return json;
 }

@@ -276,6 +276,16 @@ struct SupercellSystemData {
 // sampling function factory methods
 // ---
 
+/// \brief Helper to get SupercellSystemData,
+///     constructing as necessary
+SupercellSystemData &get_supercell_data(
+    System &system, Eigen::Matrix3l const &transformation_matrix_to_super);
+
+/// \brief Helper to get SupercellSystemData,
+///     constructing as necessary
+SupercellSystemData &get_supercell_data(System &system,
+                                        state_type const &state);
+
 /// \brief Helper to get std::shared_ptr<config::Prim const>
 std::shared_ptr<config::Prim const> const &get_prim_info(System const &system);
 

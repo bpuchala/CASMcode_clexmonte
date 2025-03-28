@@ -17,9 +17,29 @@ namespace clexmonte {
 
 /// \brief Data calculated for a single event in a single state
 struct EventState {
+  EventState()
+      : is_allowed(false),
+        formation_energy_delta_corr(nullptr),
+        entropy_delta_corr(nullptr),
+        local_corr(nullptr),
+        is_normal(false),
+        dE_final(0.0),
+        Ekra(0.0),
+        dE_activated(0.0),
+        freq(0.0),
+        rate(0.0),
+        d_generalized_enthalpy_activated(0.0),
+        d_generalized_enthalpy_final(0.0),
+        reverse_rate(0.0),
+        dS_final(0.0),
+        Skra(0.0),
+        dS_activated(0.0) {}
+
   bool is_allowed;  ///< Is allowed given current configuration
   Eigen::VectorXd const *
       formation_energy_delta_corr;  ///< Change in formation energy correlations
+  Eigen::VectorXd const
+      *entropy_delta_corr;  ///< Change in formation energy correlations
   Eigen::VectorXd const *local_corr;  ///< Local correlations
   bool is_normal;       ///< Is "normal" (dEa > 0.0) && (dEa > dEf)
   double dE_final;      ///< Final state energy, relative to initial state
@@ -27,6 +47,17 @@ struct EventState {
   double dE_activated;  ///< Activation energy, relative to initial state
   double freq;          ///< Attempt frequency
   double rate;          ///< Occurance rate
+
+  double d_generalized_enthalpy_activated;  ///< Change in free energy to
+                                            ///< activated state
+  double
+      d_generalized_enthalpy_final;  ///< Change in free energy to final state
+  double reverse_rate;               ///< Reverse rate
+
+  // -- Evalauted for CALCMETHOD::CLEX_ENTROPY --
+  double dS_final;      ///< Final state entropy, relative to initial state
+  double Skra;          ///< KRA entropy
+  double dS_activated;  ///< Activation entropy, relative to initial state
 };
 
 /// \brief Data particular to a single translationally distinct event

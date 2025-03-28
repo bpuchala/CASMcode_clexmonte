@@ -21,7 +21,8 @@ EventStateCalculator::EventStateCalculator(std::shared_ptr<system_type> _system,
     : m_system(_system),
       m_event_type_name(_event_type_name),
       m_custom_event_state_calculation(false),
-      m_custom_event_state_calculation_f(nullptr) {}
+      m_custom_event_state_calculation_f(nullptr),
+      m_calc_method(CALCMETHOD::INVALID) {}
 
 /// \brief Reset pointer to state currently being calculated
 void EventStateCalculator::set(state_type const *state) {
@@ -33,6 +34,17 @@ void EventStateCalculator::set(state_type const *state) {
   }
   m_temperature = &m_state->conditions.scalar_values.at("temperature");
   m_formation_energy_clex = get_clex(*m_system, *m_state, "formation_energy");
+
+  // Option: CALCMETHOD::CLEX_ENTROPY if a "entropy" cluster expansion is found
+  auto const &supercell_clex = get_supercell_data(*m_system, *m_state).clex;
+  auto it = supercell_clex.find("entropy");
+  if (it == supercell_clex.end()) {
+    m_calc_method = CALCMETHOD::CONST_ENTROPY;
+  } else {
+    m_calc_method = CALCMETHOD::CLEX_ENTROPY;
+    m_entropy_clex = it->second;
+    CASM::clexmonte::set(*m_entropy_clex, *m_state);
+  }
 
   // set and validate event clex
   LocalMultiClexData event_local_multiclex_data =
@@ -57,8 +69,14 @@ void EventStateCalculator::set(state_type const *state) {
       throw std::runtime_error(ss.str());
     }
   };
-  _check_coeffs(m_kra_index, "kra");
-  _check_coeffs(m_freq_index, "freq");
+
+  if (m_calc_method == CALCMETHOD::CONST_ENTROPY) {
+    _check_coeffs(m_kra_index, "kra");
+    _check_coeffs(m_freq_index, "freq");
+  } else if (m_calc_method == CALCMETHOD::CLEX_ENTROPY) {
+    _check_coeffs(m_Ekra_index, "Ekra");
+    _check_coeffs(m_Skra_index, "Skra");
+  }
 }
 
 /// \brief Set custom event state calculation function
@@ -127,32 +145,98 @@ void EventStateCalculator::_default_event_state_calculation(
   //  state.dE_final = m_formation_energy_clex->occ_delta_value(
   //      event_data.event.linear_site_index, prim_event_data.occ_final);
 
-  // calculate change in energy to final state
-  // - and save pointer to delta correlations
-  state.formation_energy_delta_corr =
-      &m_formation_energy_clex->correlations().occ_delta(
-          linear_site_index, prim_event_data.occ_final);
-  state.dE_final = m_formation_energy_clex->coefficients() *
-                   (*state.formation_energy_delta_corr);
+  if (m_calc_method == CALCMETHOD::CONST_ENTROPY) {
+    // calculate change in energy to final state
+    // - and save pointer to delta correlations
+    state.formation_energy_delta_corr =
+        &m_formation_energy_clex->correlations().occ_delta(
+            linear_site_index, prim_event_data.occ_final);
+    state.dE_final = m_formation_energy_clex->coefficients() *
+                     (*state.formation_energy_delta_corr);
 
-  // calculate KRA and attempt frequency
-  // - add save pointer to local correlations
-  state.local_corr = &m_event_clex->correlations().local(
-      unitcell_index, prim_event_data.equivalent_index);
-  for (int i = 0; i < m_event_clex->coefficients().size(); ++i) {
-    m_event_values(i) = m_event_clex->coefficients()[i] * (*state.local_corr);
+    // calculate KRA and attempt frequency
+    // - add save pointer to local correlations
+    state.local_corr = &m_event_clex->correlations().local(
+        unitcell_index, prim_event_data.equivalent_index);
+    for (int i = 0; i < m_event_clex->coefficients().size(); ++i) {
+      m_event_values(i) = m_event_clex->coefficients()[i] * (*state.local_corr);
+    }
+    state.Ekra = m_event_values[m_kra_index];
+    state.freq = m_event_values[m_freq_index];
+
+    // calculate energy in activated state, check if "normal", calculate rate
+    state.dE_activated = state.dE_final * 0.5 + state.Ekra;
+    state.is_normal =
+        (state.dE_activated > 0.0) && (state.dE_activated > state.dE_final);
+    if (state.dE_activated < state.dE_final)
+      state.dE_activated = state.dE_final;
+    if (state.dE_activated < 0.0) state.dE_activated = 0.0;
+
+    // calculate rate
+    state.rate = state.freq * exp(-this->beta() * state.dE_activated);
+
+    // change in free energy & reverse rate
+    state.d_generalized_enthalpy_activated = state.dE_activated;
+    state.d_generalized_enthalpy_final = state.dE_final;
+    state.reverse_rate =
+        state.rate * exp(this->beta() * state.d_generalized_enthalpy_final);
+
+  } else if (m_calc_method == CALCMETHOD::CLEX_ENTROPY) {
+    // calculate change in energy and entropy to final state
+    // - and save pointer to delta correlations
+    state.formation_energy_delta_corr =
+        &m_formation_energy_clex->correlations().occ_delta(
+            linear_site_index, prim_event_data.occ_final);
+    state.dE_final = m_formation_energy_clex->coefficients() *
+                     (*state.formation_energy_delta_corr);
+    state.entropy_delta_corr = &m_entropy_clex->correlations().occ_delta(
+        linear_site_index, prim_event_data.occ_final);
+    state.dS_final =
+        m_entropy_clex->coefficients() * (*state.entropy_delta_corr);
+
+    // calculate Ekra and Skra
+    // - add save pointer to local correlations
+    state.local_corr = &m_event_clex->correlations().local(
+        unitcell_index, prim_event_data.equivalent_index);
+    for (int i = 0; i < m_event_clex->coefficients().size(); ++i) {
+      m_event_values(i) = m_event_clex->coefficients()[i] * (*state.local_corr);
+    }
+    state.Ekra = m_event_values[m_Ekra_index];
+    state.Skra = m_event_values[m_Skra_index];
+
+    // calculate energy in activated state, check if "normal", calculate rate
+    state.dE_activated = state.dE_final * 0.5 + state.Ekra;
+    state.dS_activated = state.dS_final * 0.5 + state.Skra;
+    state.is_normal =
+        (state.dE_activated > 0.0) && (state.dE_activated > state.dE_final);
+    if (state.dE_activated < state.dE_final) {
+      state.dE_activated = state.dE_final;
+      state.dS_activated = state.dS_final;
+    }
+    if (state.dE_activated < 0.0) {
+      state.dE_activated = 0.0;
+      state.dS_activated = 0.0;
+    }
+
+    state.freq =
+        (this->kT() / CASM::PLANCK) * exp(state.dS_activated / CASM::KB);
+
+    // calculate rate
+    state.rate = state.freq * exp(-this->beta() * state.dE_activated);
+
+    // change in free energy & reverse rate
+    state.d_generalized_enthalpy_activated =
+        state.dE_activated - this->temperature() * state.dS_activated;
+    state.d_generalized_enthalpy_final =
+        state.dE_final - this->temperature() * state.dS_final;
+    state.reverse_rate =
+        state.rate * exp(this->beta() * state.d_generalized_enthalpy_final);
+
+  } else {
+    throw std::runtime_error(
+        "Error in EventStateCalculator::_default_event_state_calculation: "
+        "invalid CALCMETHOD");
   }
-  state.Ekra = m_event_values[m_kra_index];
-  state.freq = m_event_values[m_freq_index];
-
-  // calculate energy in activated state, check if "normal", calculate rate
-  state.dE_activated = state.dE_final * 0.5 + state.Ekra;
-  state.is_normal =
-      (state.dE_activated > 0.0) && (state.dE_activated > state.dE_final);
-  if (state.dE_activated < state.dE_final) state.dE_activated = state.dE_final;
-  if (state.dE_activated < 0.0) state.dE_activated = 0.0;
-
-  state.rate = state.freq * exp(-this->beta() * state.dE_activated);
 }
 
 namespace {

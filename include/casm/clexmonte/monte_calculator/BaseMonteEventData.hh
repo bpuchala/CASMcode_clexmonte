@@ -22,6 +22,8 @@ typedef std::function<void(std::reference_wrapper<EventState> state,
                            EventStateCalculator const &calculator)>
     CustomEventStateCalculationFunction;
 
+enum class CALCMETHOD { CONST_ENTROPY, CLEX_ENTROPY, INVALID };
+
 /// \brief Event rate calculation for a particular KMC event
 ///
 /// EventStateCalculator is used to separate the event calculation from the
@@ -29,6 +31,18 @@ typedef std::function<void(std::reference_wrapper<EventState> state,
 /// events can use the same EventStateCalculator, but a simple approach
 /// is to create one for each distinct event associated with the primitive
 /// cell.
+///
+/// Two calculation methods are supported:
+/// - `CALCMETHOD::CONST_ENTROPY`: uses a constant vibrational entropy
+///   assumption and a local cluster expansion (usually just a constant term)
+///   sets the attempt frequency.
+///   - This is the default, used if no "entropy" cluster expansion is found.
+///   - This requires "kra" and "freq" local cluster expansions for each event.
+/// - `CALCMETHOD::CLEX_ENTROPY`: uses a cluster expansion for the vibrational
+///   entropy and a local cluster expansion for the kinetically-resolved
+///   activation entropy, Skra.
+///   - This is used if an "entropy" cluster expansion is found.
+///   - This requires "Ekra" and "Skra" local cluster expansions for each event.
 class EventStateCalculator {
  public:
   /// \brief Constructor
@@ -56,10 +70,13 @@ class EventStateCalculator {
   /// \brief Return the event type name
   std::string const &event_type_name() const { return m_event_type_name; }
 
-  /// \brief Current state's temperature
+  /// \brief Current state's temperature, :math:`T`
   double temperature() const { return *m_temperature; }
 
-  /// \brief Current state's reciprocal temperature
+  /// \brief The value of :math:`k_{B}T` for the current state
+  double kT() const { return CASM::KB * *this->m_temperature; }
+
+  /// \brief Current state's reciprocal temperature, :math:`\beta = 1/(k_{B}T)`
   double beta() const { return 1.0 / (CASM::KB * *this->m_temperature); }
 
   /// \brief Get the unitcell index for the event currently being calculated
@@ -100,10 +117,28 @@ class EventStateCalculator {
     return m_formation_energy_clex->coefficients();
   }
 
+  /// Get the entropy cluster expansion
+  std::shared_ptr<clexulator::ClusterExpansion> entropy_clex() const {
+    return m_entropy_clex;
+  }
+
+  /// Get the entropy coefficients
+  clexulator::SparseCoefficients const &entropy_coefficients() const {
+    if (m_entropy_clex == nullptr) {
+      throw std::runtime_error(
+          "EventStateCalculator::entropy_coefficients: "
+          "m_entropy_clex == nullptr");
+    }
+    return m_entropy_clex->coefficients();
+  }
+
   /// Get the event multi-local cluster expansion
   std::shared_ptr<clexulator::MultiLocalClusterExpansion> event_clex() const {
     return m_event_clex;
   }
+
+  /// The method used to calculate the event state
+  CALCMETHOD calc_method() const { return m_calc_method; }
 
   /// The index of the event multi-local cluster expansion output that
   /// corresponds to the KRA value
@@ -112,6 +147,14 @@ class EventStateCalculator {
   /// The index of the event multi-local cluster expansion output that
   /// corresponds to the attempt frequency value
   Index freq_index() const { return m_freq_index; }
+
+  /// The index of the event multi-local cluster expansion output that
+  /// corresponds to the Ekra value
+  Index Ekra_index() const { return m_Ekra_index; }
+
+  /// The index of the event multi-local cluster expansion output that
+  /// corresponds to the Skra value
+  Index Skra_index() const { return m_Skra_index; }
 
   /// Get the attempt frequency coefficients for a specific event
   clexulator::SparseCoefficients const &freq_coefficients() const {
@@ -129,6 +172,24 @@ class EventStateCalculator {
           "EventStateCalculator::kra_coefficients: m_event_clex == nullptr");
     }
     return m_event_clex->coefficients()[m_kra_index];
+  }
+
+  /// Get the Ekra coefficients for a specific event
+  clexulator::SparseCoefficients const &Ekra_coefficients() const {
+    if (m_event_clex == nullptr) {
+      throw std::runtime_error(
+          "EventStateCalculator::Ekra_coefficients: m_event_clex == nullptr");
+    }
+    return m_event_clex->coefficients()[m_Ekra_index];
+  }
+
+  /// Get the Skra coefficients for a specific event
+  clexulator::SparseCoefficients const &Skra_coefficients() const {
+    if (m_event_clex == nullptr) {
+      throw std::runtime_error(
+          "EventStateCalculator::Skra_coefficients: m_event_clex == nullptr");
+    }
+    return m_event_clex->coefficients()[m_Skra_index];
   }
 
  private:
@@ -151,10 +212,19 @@ class EventStateCalculator {
   double const *m_temperature;
 
   std::shared_ptr<clexulator::ClusterExpansion> m_formation_energy_clex;
+  std::shared_ptr<clexulator::ClusterExpansion> m_entropy_clex;
   std::shared_ptr<clexulator::MultiLocalClusterExpansion> m_event_clex;
   mutable Eigen::VectorXd m_event_values;
+
+  CALCMETHOD m_calc_method;
+
+  // -- CALCMETHOD::CONST_ENTROPY: --
   Index m_kra_index;
   Index m_freq_index;
+
+  // -- CALCMETHOD::CLEX_ENTROPY: --
+  Index m_Ekra_index;
+  Index m_Skra_index;
 
   /// If true, use custom event state calculation function
   bool m_custom_event_state_calculation;
