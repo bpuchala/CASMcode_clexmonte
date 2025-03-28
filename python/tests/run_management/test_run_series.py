@@ -70,8 +70,10 @@ def test_run_series_1(Clex_ZrO_Occ_System, tmp_path):
     # before_each_run = [] // TODO
     sampling_fixture_params = [thermo]
 
-    log = monte.MethodLog()
-    log.reset_to_stdout()
+    log = monte.MethodLog(
+        logfile_path=str(output_dir / "log.txt"),
+    )
+    # log.reset_to_stdout()
     log.section("Begin: Monte Carlo calculation series")
 
     run_manager = clexmonte.RunManager(
