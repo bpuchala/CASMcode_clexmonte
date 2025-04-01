@@ -5,6 +5,7 @@
 
 #include "casm/clexmonte/definitions.hh"
 #include "casm/clexmonte/events/event_data.hh"
+#include "casm/clexmonte/events/state_graph.hh"
 #include "casm/clexmonte/system/System.hh"
 #include "casm/monte/methods/kinetic_monte_carlo.hh"
 #include "casm/monte/misc/LexicographicalCompare.hh"
@@ -388,6 +389,11 @@ struct EventDataOptions {
   ///     are allowed will still be checked during the rate calculation).
   ///
   bool assign_allowed_events_only = true;
+
+  // -- State saving options --
+
+  /// \brief State graph / FPTA (First Passage Time Analysis) options
+  std::optional<state_graph::Options> state_graph_options = std::nullopt;
 };
 
 /// \brief Base class to provide access to event data for a Monte Carlo

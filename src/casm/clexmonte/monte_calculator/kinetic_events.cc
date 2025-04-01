@@ -17,6 +17,7 @@
 #include "casm/monte/run_management/State.hh"
 
 // this must be included after the classes are defined for its application here
+#include "casm/clexmonte/events/state_graph_impl.hh"
 #include "casm/clexmonte/methods/kinetic_monte_carlo.hh"
 
 namespace CASM {
@@ -182,6 +183,12 @@ CompleteKineticEventData<DebugMode>::CompleteKineticEventData(
       options.n_write_if_selected_event_is_abnormal /*int _n_write*/,
       options.output_dir /*fs::path _output_dir*/,
       options.local_corr_compare_tol /*double _tol*/));
+
+  /// Construct the state graph if requested
+  if (_options.state_graph_options.has_value()) {
+    this->state_graph = std::make_shared<state_graph::StateGraph>(
+        *_options.state_graph_options);
+  }
 }
 
 /// \brief Update for given state, conditions, occupants, event filters
@@ -311,9 +318,11 @@ void CompleteKineticEventData<DebugMode>::select_event(
   //   was a previous selection)
   // - Updates the total rate
   // - Chooses an event and time increment (does not apply event)
-  // - Sets a list of impacted events by the chosen event
+  //
+  // It does not apply the event or set the impacted events.
+
   std::tie(selected_event.event_id, selected_event.time_increment) =
-      event_selector->select_event();
+      event_selector->only_select_event();
   selected_event.total_rate = event_selector->total_rate();
   EventID const &event_id = selected_event.event_id;
   EventData const &event_data = event_list.events.at(event_id);
@@ -534,6 +543,12 @@ AllowedKineticEventData<EventSelectorType, DebugMode>::AllowedKineticEventData(
   set_selected_abnormal_event_handling(selected_abnormal_event_handling_f);
   this->selected_abnormal_event_handling_on =
       selected_abnormal_event_handling_f.handling_on();
+
+  /// Construct the state graph if requested
+  if (_options.state_graph_options.has_value()) {
+    this->state_graph = std::make_shared<state_graph::StateGraph>(
+        *_options.state_graph_options);
+  }
 
   if constexpr (DebugMode) {
     Log &log = CASM::log();
@@ -837,12 +852,25 @@ void AllowedKineticEventData<EventSelectorType, DebugMode>::select_event(
   // - Updates rates of events impacted by the *last* selected event (if there
   //   was a previous selection)
   // - Updates the total rate
+  // - If saving states, saves the state
   // - Chooses an event and time increment
   //
   // It does not apply the event or set the impacted events.
   Index selected_event_index;
-  std::tie(selected_event_index, selected_event.time_increment) =
-      event_selector->only_select_event();
+
+  if (!this->state_graph) {
+    std::tie(selected_event_index, selected_event.time_increment) =
+        event_selector->only_select_event();
+  } else {
+    // update impacted event rates
+    event_selector->update_impacted_event_rates();
+
+    // save state
+
+    // determine next exit state & event
+
+    // set state to exit state (TBD: checking if time is past next sample time)
+  }
   selected_event.total_rate = event_selector->total_rate();
 
   EventID const &event_id =

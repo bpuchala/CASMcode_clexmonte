@@ -360,6 +360,9 @@ void kinetic_monte_carlo_v2(
       [&](monte::SamplingFixture<ConfigType, StatisticsType, EngineType>
               &fixture,
           monte::State<ConfigType> const &state) {
+        // if save states:
+        // - determine the state at sample time
+
         // set data that can be used in sampling functions
         kmc_data.sampling_fixture_label = fixture.label();
         kmc_data.sampling_fixture = &fixture;
@@ -383,6 +386,9 @@ void kinetic_monte_carlo_v2(
         kmc_data.prev_atom_positions_cart[fixture.label()] =
             kmc_data.atom_positions_cart;
         kmc_data.prev_unique_atom_id[fixture.label()] = kmc_data.unique_atom_id;
+
+        // if save states:
+        // - select next event
       };
 
   // Main loop
@@ -421,14 +427,16 @@ void kinetic_monte_carlo_v2(
     run_manager.write_status_if_due();
     end_section<DebugMode>();
 
+    // --
+
     // Select an event. This function:
     // - Updates rates of events impacted by the previous selected event (if
     //   there was a previous event)
     // - Updates the total rate
+    // - If saving states, saves state
     // - Chooses an event and time increment (does not apply event)
     // - Sets a list of impacted events by the chosen event that will be
-    // updated
-    //   on the next iteration
+    //   updated on the next iteration
     // - If `requires_event_state` is true, then the event state is calculated
     //   for the selected event
     begin_section<DebugMode>("Select an event");
@@ -489,6 +497,9 @@ void kinetic_monte_carlo_v2(
     }
     end_section<DebugMode>();
 
+    // If saving states -
+    // - Set state to exit state
+
     // Apply event
     begin_section<DebugMode>("Apply selected event");
     occ_location.apply(selected_event.event_data->event, get_occupation(state));
@@ -498,6 +509,10 @@ void kinetic_monte_carlo_v2(
     begin_section<DebugMode>("Set impacted events");
     set_impacted_events_f(selected_event);
     end_section<DebugMode>();
+
+    // If saving states -
+    // - Add mutated sites to reference state
+    // - Add impacted events to reference state
 
     // Sample data, if a sample is due by count
     // - This location correctly handles sampling at count=0 and count!=0

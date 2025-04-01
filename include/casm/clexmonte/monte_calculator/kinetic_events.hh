@@ -5,6 +5,7 @@
 #include "casm/clexmonte/events/CompleteEventList.hh"
 #include "casm/clexmonte/events/event_methods.hh"
 #include "casm/clexmonte/events/lotto.hh"
+#include "casm/clexmonte/events/state_graph.hh"
 #include "casm/clexmonte/monte_calculator/BaseMonteEventData.hh"
 #include "casm/clexmonte/monte_calculator/StateData.hh"
 #include "casm/monte/MethodLog.hh"
@@ -129,6 +130,11 @@ class CompleteKineticEventData : public BaseMonteEventData {
 
   /// Calculator for KMC event selection
   std::shared_ptr<CompleteEventCalculator<DebugMode>> event_calculator;
+
+  // -- State saving options & data --
+
+  /// \brief Stores saved states / FPTA (First Passage Time Analysis) data
+  std::shared_ptr<state_graph::StateGraph> state_graph;
 
   /// Event selector
   std::shared_ptr<event_selector_type> event_selector;
@@ -507,6 +513,11 @@ class AllowedKineticEventData : public BaseMonteEventData {
 
   /// Calculator for KMC event selection
   std::shared_ptr<event_calculator_type> event_calculator;
+
+  // -- State saving options & data --
+
+  /// \brief Stores saved states / FPTA (First Passage Time Analysis) data
+  std::shared_ptr<state_graph::StateGraph> state_graph;
 
   // -- Event selector options --
 

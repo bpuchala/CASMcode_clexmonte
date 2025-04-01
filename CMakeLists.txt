@@ -129,6 +129,8 @@ set(
   ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/events/lotto/rejection_free.hpp
   ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/events/lotto/sum_tree.hpp
   ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/events/lotto/sum_tree_impl.hpp
+  ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/events/state_graph.hh
+  ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/events/state_graph_impl.hh
   ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/kinetic/io/json/EventState_json_io.hh
   ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/kinetic/io/stream/EventState_stream_io.hh
   ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/kinetic/kinetic.hh
@@ -212,6 +214,7 @@ set(
   ${PROJECT_SOURCE_DIR}/src/casm/clexmonte/events/event_methods.cc
   ${PROJECT_SOURCE_DIR}/src/casm/clexmonte/events/io/json/event_data_json_io.cc
   ${PROJECT_SOURCE_DIR}/src/casm/clexmonte/events/io/stream/EventState_stream_io.cc
+  ${PROJECT_SOURCE_DIR}/src/casm/clexmonte/events/state_graph.cc
   ${PROJECT_SOURCE_DIR}/src/casm/clexmonte/kinetic/io/json/EventState_json_io.cc
   ${PROJECT_SOURCE_DIR}/src/casm/clexmonte/kinetic/io/stream/EventState_stream_io.cc
   ${PROJECT_SOURCE_DIR}/src/casm/clexmonte/kinetic/kinetic.cc
