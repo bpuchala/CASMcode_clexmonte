@@ -64,9 +64,10 @@ TEST_F(events_CompleteEventCalculator_Test, Test1) {
       std::make_shared<clexmonte::kinetic::CompleteEventCalculator>(
           prim_event_list, prim_event_calculators, event_list.events);
 
-  double expected_Ekra = 1.0;
+  double expected_Ef_kra = 1.0;
   double expected_freq = 1e12;
-  double expected_rate = expected_freq * exp(-conditions->beta * expected_Ekra);
+  double expected_rate =
+      expected_freq * exp(-conditions->beta * expected_Ef_kra);
 
   Index i = 0;
   Index n_not_allowed = 0;
@@ -90,8 +91,9 @@ TEST_F(events_CompleteEventCalculator_Test, Test1) {
       // print(std::cout, event_state, event_data, prim_event_data);
       // std::cout << std::endl;
       EXPECT_TRUE(CASM::almost_equal(event_state.dE_final, 0.0));
-      EXPECT_TRUE(CASM::almost_equal(event_state.dE_activated, expected_Ekra));
-      EXPECT_TRUE(CASM::almost_equal(event_state.Ekra, expected_Ekra));
+      EXPECT_TRUE(
+          CASM::almost_equal(event_state.dE_activated, expected_Ef_kra));
+      EXPECT_TRUE(CASM::almost_equal(event_state.Ef_kra, expected_Ef_kra));
       EXPECT_TRUE(CASM::almost_equal(event_state.freq, expected_freq));
       EXPECT_TRUE(CASM::almost_equal(event_state.rate, expected_rate));
       ++n_allowed;

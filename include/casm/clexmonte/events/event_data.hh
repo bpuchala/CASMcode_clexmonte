@@ -19,46 +19,86 @@ namespace clexmonte {
 struct EventState {
   EventState()
       : is_allowed(false),
-        formation_energy_delta_corr(nullptr),
-        entropy_delta_corr(nullptr),
-        local_corr(nullptr),
         is_normal(false),
         dE_final(0.0),
-        Ekra(0.0),
         dE_activated(0.0),
         freq(0.0),
         rate(0.0),
-        d_generalized_enthalpy_activated(0.0),
-        d_generalized_enthalpy_final(0.0),
         reverse_rate(0.0),
+        formation_energy_delta_corr(nullptr),
+        local_corr(nullptr),
+        Ef_kra(0.0),
+        dEf_final(0.0),
+        dEf_activated(0.0),
+        entropy_delta_corr(nullptr),
+        S_kra(0.0),
         dS_final(0.0),
-        Skra(0.0),
         dS_activated(0.0) {}
 
-  bool is_allowed;  ///< Is allowed given current configuration
-  Eigen::VectorXd const *
-      formation_energy_delta_corr;  ///< Change in formation energy correlations
-  Eigen::VectorXd const
-      *entropy_delta_corr;  ///< Change in formation energy correlations
-  Eigen::VectorXd const *local_corr;  ///< Local correlations
+  bool is_allowed;      ///< Is allowed given current configuration
   bool is_normal;       ///< Is "normal" (dEa > 0.0) && (dEa > dEf)
   double dE_final;      ///< Final state energy, relative to initial state
-  double Ekra;          ///< KRA energy
   double dE_activated;  ///< Activation energy, relative to initial state
   double freq;          ///< Attempt frequency
+  double reverse_freq;  ///< Reverse attempt frequency
   double rate;          ///< Occurance rate
+  double reverse_rate;  ///< Reverse rate
 
-  double d_generalized_enthalpy_activated;  ///< Change in free energy to
-                                            ///< activated state
-  double
-      d_generalized_enthalpy_final;  ///< Change in free energy to final state
-  double reverse_rate;               ///< Reverse rate
+  // -- Evaluated for CALCMETHOD::CONST_ENTROPY and CALCMETHOD::CLEX_ENTROPY --
+  Eigen::VectorXd const *
+      formation_energy_delta_corr;  ///< Change in formation energy correlations
+  Eigen::VectorXd const *local_corr;  ///< Local correlations
+  double Ef_kra;                      ///< KRA energy
+  double dEf_final;      ///< Change in formation energy to final state
+  double dEf_activated;  ///< Change in formation energy to activated state
 
-  // -- Evalauted for CALCMETHOD::CLEX_ENTROPY --
-  double dS_final;      ///< Final state entropy, relative to initial state
-  double Skra;          ///< KRA entropy
-  double dS_activated;  ///< Activation entropy, relative to initial state
+  // -- Evaluated for CALCMETHOD::CLEX_ENTROPY --
+  Eigen::VectorXd const
+      *entropy_delta_corr;  ///< Change in formation energy correlations
+  double S_kra;             ///< KRA entropy
+  double dS_final;          ///< Final state entropy, relative to initial state
+  double dS_activated;      ///< Activation entropy, relative to initial state
 };
+
+// TODO Option:
+//  Generalize the event state data structure,
+//  Template the event state calculation
+//
+// struct GeneralizedEventState {
+//   bool is_allowed;      ///< Is allowed given current configuration
+//   bool is_normal;       ///< Is "normal" (dEa > 0.0) && (dEa > dEf)
+//   double dE_final;      ///< Final state energy, relative to initial state
+//   double dE_activated;  ///< Activation energy, relative to initial state
+//   double freq;          ///< Attempt frequency
+//   double rate;          ///< Occurance rate
+//   double reverse_rate;  ///< Reverse rate
+//
+//   std::vector<double> scalar_params;                 ///< Scalar parameters
+//   std::vector<Eigen::VectorXd> vector_params;        ///< Vector parameters
+//   std::vector<Eigen::MatrixXd> matrix_params;        ///< Matrix parameters
+//   std::vector<Eigen::VectorXd const *> corr_params;  ///< Correlation vectors
+// };
+//
+// struct GeneralizedEventStateGlossary {
+//   std::vector<std::string> scalar_param_names;  ///< Scalar parameter names
+//
+//   std::vector<std::string> vector_param_names;  ///< Vector parameter names
+//
+//   std::vector<std::string> matrix_param_names;  ///< Matrix parameter names
+//
+//   std::vector<std::string> corr_param_names;  ///< Correlation vector names
+// };
+//
+// rate = freq * exp(-beta * dE_activated)
+// struct ConstEntropyEventStateCalculator;
+//
+// rate = (kT/h) * exp(-beta * dE_activated)
+// rate = (kT/h) * exp(-beta * (dEf_activated - T * dS_activated))
+// struct ClexEntropyEventStateCalculator;
+
+// TODO Option:
+//  Template the event state data structure and calculation
+//
 
 /// \brief Data particular to a single translationally distinct event
 struct EventData {
@@ -204,6 +244,7 @@ struct SelectedEvent {
   EventID event_id;
   Index event_index;
   double total_rate;
+  double time;
   double time_increment;
   PrimEventData const *prim_event_data;
   EventData const *event_data;
@@ -213,6 +254,12 @@ struct SelectedEvent {
   /// functions; otherwise, nullptr
   EventState const *event_state;
 
+  /// \brief Event group index, if applicable
+  Index group;
+
+  /// \brief Event group state index, if applicable
+  Index group_state;
+
   void reset() {
     event_id = EventID();
     event_index = -1;
@@ -221,6 +268,8 @@ struct SelectedEvent {
     prim_event_data = nullptr;
     event_data = nullptr;
     event_state = nullptr;
+    group = -1;
+    group_state = -1;
   }
 };
 

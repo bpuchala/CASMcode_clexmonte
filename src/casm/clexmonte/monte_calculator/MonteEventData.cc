@@ -99,7 +99,7 @@ EventDataSummary::EventDataSummary(
                      0.0 /* initial_begin */, energy_bin_width /* bin_width */,
                      false /* is_log */);
 
-  stats_labels.push_back("Ekra");
+  stats_labels.push_back("Ef_kra");
   stats.emplace_back(event_type_names, equivalent_index_names,
                      0.0 /* initial_begin */, energy_bin_width /* bin_width */,
                      false /* is_log */);
@@ -236,7 +236,7 @@ void EventDataSummary::_add_stats(EventID const &id, EventState const &state) {
   int i = 0;
   stats[i++].insert(t, e, state.dE_final);
   stats[i++].insert(t, e, state.dE_activated);
-  stats[i++].insert(t, e, state.Ekra);
+  stats[i++].insert(t, e, state.Ef_kra);
   stats[i++].insert(t, e, state.freq);
   stats[i++].insert(t, e, state.rate);
 }

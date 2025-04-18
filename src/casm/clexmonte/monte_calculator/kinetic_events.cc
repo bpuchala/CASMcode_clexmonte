@@ -186,8 +186,8 @@ CompleteKineticEventData<DebugMode>::CompleteKineticEventData(
 
   /// Construct the state graph if requested
   if (_options.state_graph_options.has_value()) {
-    this->state_graph = std::make_shared<state_graph::StateGraph>(
-        *_options.state_graph_options);
+    //    this->state_graph = std::make_shared<state_graph::StateGraph>(
+    //        *_options.state_graph_options);
   }
 }
 
@@ -287,10 +287,15 @@ void CompleteKineticEventData<DebugMode>::update(
 template <bool DebugMode>
 void CompleteKineticEventData<DebugMode>::run(
     state_type &state, monte::OccLocation &occ_location,
-    kmc_data_type &kmc_data, SelectedEvent &selected_event,
+    SelectedEvent &selected_event,
     std::optional<monte::SelectedEventDataCollector> &collector,
-    run_manager_type &run_manager,
+    run_manager_type &run_manager, std::shared_ptr<kmc_data_type> _kmc_data,
     std::shared_ptr<occ_events::OccSystem> event_system) {
+  if (_kmc_data == nullptr) {
+    throw std::runtime_error(
+        "Error in CompleteKineticEventData::run: _kmc_data==nullptr");
+  }
+  this->kmc_data = _kmc_data;
   // Function to set selected event
   bool requires_event_state = check_requires_event_state<DebugMode>(
       collector, this->selected_abnormal_event_handling_on);
@@ -305,7 +310,7 @@ void CompleteKineticEventData<DebugMode>::run(
 
   // Run Kinetic Monte Carlo at a single condition
   kinetic_monte_carlo_v2<DebugMode>(
-      state, occ_location, kmc_data, selected_event, set_selected_event_f,
+      state, occ_location, *_kmc_data, selected_event, set_selected_event_f,
       set_impacted_events_f, collector, run_manager, event_system);
 }
 
@@ -323,6 +328,7 @@ void CompleteKineticEventData<DebugMode>::select_event(
 
   std::tie(selected_event.event_id, selected_event.time_increment) =
       event_selector->only_select_event();
+  selected_event.time = this->kmc_data->time + selected_event.time_increment;
   selected_event.total_rate = event_selector->total_rate();
   EventID const &event_id = selected_event.event_id;
   EventData const &event_data = event_list.events.at(event_id);
@@ -368,37 +374,132 @@ template <bool DebugMode>
 AllowedEventCalculator<DebugMode>::AllowedEventCalculator(
     std::vector<PrimEventData> const &_prim_event_list,
     std::vector<EventStateCalculator> const &_prim_event_calculators,
-    AllowedEventList &_event_list, bool _abnormal_event_handling_on,
+    AllowedEventList &_event_list,
+    std::vector<std::shared_ptr<event_group::EventGroup<DebugMode>>>
+        &_event_group,
+    bool _abnormal_event_handling_on,
     AbnormalEventHandlingFunction &_handling_f,
     std::map<std::string, Index> &_n_encountered_abnormal)
     : prim_event_list(_prim_event_list),
       prim_event_calculators(_prim_event_calculators),
       event_list(_event_list),
+      event_group(_event_group),
       abnormal_event_handling_on(_abnormal_event_handling_on),
       handling_f(_handling_f),
       n_encountered_abnormal(_n_encountered_abnormal) {}
 
 /// \brief Update `event_state` for event `event_index` in the current state
-/// and return the event rate; if the event is no longer allowed, free the
-/// event.
+/// and return the event rate; if the event is no longer allowed and not
+/// included in any event group, free the event.
+///
+/// Calculate event rates:
+/// - If event is ungrouped (group=0):
+///   - add rate to event selector
+/// - If event is grouped (group!=0),
+///   but index_in_group is not set (index_in_group=-1):
+///   - add ref_rate and ref_dE_activated to EventGroup,
+///   - set index_in_group
+///   - add rate and dE_activated to group's current state
+///   - set 0.0 rate in event selector
+/// - If event is grouped (group!=0),
+///   and index_in_group is set (index_in_group!=-1):
+///   - set rate and dE_activated to group's current state
+///   - set 0.0 rate in event selector
+///
+/// \param event_index Linear index of event in event_list.allowed_event_map
+///
+/// \return rate, The rate of the event in the current state
 template <bool DebugMode>
 double AllowedEventCalculator<DebugMode>::calculate_rate(Index event_index) {
   AllowedEventData const &allowed_event_data =
       event_list.allowed_event_map.events()[event_index];
-  // EventID original_event_id = allowed_event_data.event_id;
+
+  auto &log = CASM::log();
+  log.increase_indent();
   if (!allowed_event_data.is_assigned) {
+    log.indent() << "- calculate " << event_index << " / {"
+                 << allowed_event_data.event_id.unitcell_index << ","
+                 << allowed_event_data.event_id.prim_event_index
+                 << "}: (not assigned) " << std::endl;
+
     event_state.is_allowed = false;
     event_state.rate = 0.0;
+
+    // this value goes into the ungrouped event selector:
+    log.decrease_indent();
+    return event_state.rate;
   } else {
     this->calculate_rate(allowed_event_data.event_id);
 
-    // free event from AllowedEventList if not allowed
-    if (!event_state.is_allowed) {
-      event_list.allowed_event_map.free(allowed_event_data.event_id);
+    if (allowed_event_data.group == 0) {
+      // Ungrouped events:
+      // - If the event is not allowed, we need to free the event from the
+      //   AllowedEventMap
+
+      if (!event_state.is_allowed) {
+        log.indent() << "- calculate " << event_index << " / {"
+                     << allowed_event_data.event_id.unitcell_index << ","
+                     << allowed_event_data.event_id.prim_event_index
+                     << "}: (group 0, not allowed) rate=" << event_state.rate
+                     << std::endl;
+        event_list.allowed_event_map.free(allowed_event_data.event_id);
+      } else {
+        log.indent() << "- calculate " << event_index << " / {"
+                     << allowed_event_data.event_id.unitcell_index << ","
+                     << allowed_event_data.event_id.prim_event_index
+                     << "}: (group 0, is allowed) rate=" << event_state.rate
+                     << std::endl;
+      }
+
+      // This value goes into the ungrouped event selector:
+      log.decrease_indent();
+      return event_state.rate;
+    } else {
+      // Grouped events:
+      // - If the event is not allowed, we still have to keep the event in the
+      //   AllowedEventMap
+      // - If the event is newly added to a group (index_in_group == -1), we
+      //   need to store the reference rate and dE_activated in the group
+      // - If the event is already in a group (index_in_group != -1), we need to
+      //   update the current state rate and dE_activated in the group
+
+      auto &group = *this->event_group[allowed_event_data.group];
+      if (allowed_event_data.index_in_group == -1) {
+        Index index_in_group = group.event.size();
+        log.indent() << "- calculate " << event_index << " / {"
+                     << allowed_event_data.event_id.unitcell_index << ","
+                     << allowed_event_data.event_id.prim_event_index
+                     << "}: (group " << allowed_event_data.group
+                     << ", index_in_group " << index_in_group
+                     << ", new to group) rate=" << event_state.rate
+                     << std::endl;
+
+        group.event.emplace_back(event_index, event_state.rate,
+                                 event_state.dE_activated);
+        event_list.allowed_event_map.set_event_index_in_group(event_index,
+                                                              index_in_group);
+        group.new_state.rate.push_back(event_state.rate);
+        group.new_state.dE_activated.push_back(event_state.dE_activated);
+      } else {
+        log.indent() << "- calculate " << event_index << " / {"
+                     << allowed_event_data.event_id.unitcell_index << ","
+                     << allowed_event_data.event_id.prim_event_index
+                     << "}: (group " << allowed_event_data.group
+                     << ", index_in_group " << allowed_event_data.index_in_group
+                     << ", existing in group) rate=" << event_state.rate
+                     << std::endl;
+
+        group.new_state.rate[allowed_event_data.index_in_group] =
+            event_state.rate;
+        group.new_state.dE_activated[allowed_event_data.index_in_group] =
+            event_state.dE_activated;
+      }
+
+      // This value goes into the ungrouped event selector:
+      log.decrease_indent();
+      return 0.0;
     }
   }
-
-  return event_state.rate;
 }
 
 /// \brief Update `event_state` for any event `event_id` in the current state
@@ -544,10 +645,28 @@ AllowedKineticEventData<EventSelectorType, DebugMode>::AllowedKineticEventData(
   this->selected_abnormal_event_handling_on =
       selected_abnormal_event_handling_f.handling_on();
 
+  /// Set use_event_groups:
+  this->use_event_groups = options.state_graph_options.has_value();
+
   /// Construct the state graph if requested
   if (_options.state_graph_options.has_value()) {
-    this->state_graph = std::make_shared<state_graph::StateGraph>(
-        *_options.state_graph_options);
+    //    this->state_graph = std::make_shared<state_graph::StateGraph>(
+    //        *_options.state_graph_options);
+    //    if constexpr (DebugMode) {
+    //      Log &log = CASM::log();
+    //      log.custom("Construct state graph");
+    //      log.indent() << "- n_recent_events = "
+    //                   << this->state_graph->opt.n_recent_events << std::endl;
+    //      log.indent() << "- n_state = " << this->state_graph->opt.n_states
+    //                   << std::endl
+    //                   << std::endl;
+    //    }
+  } else {
+    if constexpr (DebugMode) {
+      Log &log = CASM::log();
+      log.custom("Construct state graph");
+      log.indent() << "- No state graph" << std::endl << std::endl;
+    }
   }
 
   if constexpr (DebugMode) {
@@ -649,23 +768,28 @@ void AllowedKineticEventData<EventSelectorType, DebugMode>::update(
         "selected_abnormal_event_handling_f == nullptr");
   }
   event_calculator = std::make_shared<AllowedEventCalculator<DebugMode>>(
-      prim_event_list, prim_event_calculators, *event_list,
+      prim_event_list, prim_event_calculators, *event_list, event_group,
       encountered_abnormal_event_handling_on,
       encountered_abnormal_event_handling_f, n_encountered_abnormal);
 
   // Make event selector
   // - This calculates all rates at construction
   this->make_event_selector();
-  this->event_list->allowed_event_map.clear_has_new_events();
 }
 
 template <typename EventSelectorType, bool DebugMode>
 void AllowedKineticEventData<EventSelectorType, DebugMode>::run(
     state_type &state, monte::OccLocation &occ_location,
-    kmc_data_type &kmc_data, SelectedEvent &selected_event,
+    SelectedEvent &selected_event,
     std::optional<monte::SelectedEventDataCollector> &collector,
-    run_manager_type &run_manager,
+    run_manager_type &run_manager, std::shared_ptr<kmc_data_type> _kmc_data,
     std::shared_ptr<occ_events::OccSystem> event_system) {
+  if (_kmc_data == nullptr) {
+    throw std::runtime_error(
+        "Error in AllowedKineticEventData::run: _kmc_data==nullptr");
+  }
+  this->kmc_data = _kmc_data;
+
   // Function to set selected event
   bool requires_event_state = check_requires_event_state<DebugMode>(
       collector, this->selected_abnormal_event_handling_on);
@@ -673,14 +797,16 @@ void AllowedKineticEventData<EventSelectorType, DebugMode>::run(
     this->select_event(selected_event, requires_event_state);
   };
 
+  // Function to set impacted events and handle the consequences of applying
+  // the last selected event
   auto set_impacted_events_f = [=](SelectedEvent &selected_event) {
-    // Set impacted events
-    this->event_selector->set_impacted_events(selected_event.event_index);
+    this->set_impacted_events(selected_event);
   };
 
   // Run Kinetic Monte Carlo at a single condition
+  this->kmc_data = _kmc_data;
   kinetic_monte_carlo_v2<DebugMode>(
-      state, occ_location, kmc_data, selected_event, set_selected_event_f,
+      state, occ_location, *_kmc_data, selected_event, set_selected_event_f,
       set_impacted_events_f, collector, run_manager, event_system);
 }
 
@@ -782,7 +908,12 @@ std::string AllowedKineticEventData<
   return event_selector_impl<EventSelectorType, DebugMode>::type_str();
 }
 
-/// \brief Constructs `event_selector`; must be called after `update`
+/// \brief Constructs `event_selector` from the current `event_calculator`,
+///     `event_list`, and `random_generator`
+///
+/// - This is called by `update`
+/// - This should be called if the AllowedEventMap is resized in order to
+///   reconstruct the event selector
 template <typename EventSelectorType, bool DebugMode>
 void AllowedKineticEventData<EventSelectorType,
                              DebugMode>::make_event_selector() {
@@ -812,25 +943,40 @@ void AllowedKineticEventData<EventSelectorType,
     log << std::endl;
     log.end_section();
   }
+
+  this->event_list->allowed_event_map.clear_has_been_resized();
+
+  // If using event groups:
+  // - If no default group, create it
+  // - build default group and select first event / time
+  if (this->use_event_groups && this->event_group.size() == 0) {
+    Index group = 0;
+    monte::TimeType group_time = 0.0;
+    if (this->kmc_data != nullptr) {
+      group_time = this->kmc_data->time;
+    }
+    this->event_group.emplace_back(
+        std::make_shared<event_group::EventGroup<DebugMode>>(
+            this->state_data, group_time, group));
+    this->current_groups.insert(group);
+    this->select_next_event_for(this->current_groups);
+  }
 }
 
-/// \brief Update for given state, conditions, occupants, event filters
+/// \brief Reconstruct the event selector if updating the allowed event list
+///     caused it to increase in size
 template <typename EventSelectorType, bool DebugMode>
-void AllowedKineticEventData<EventSelectorType, DebugMode>::select_event(
-    SelectedEvent &selected_event, bool requires_event_state) {
-  // If updating the event list with impacted events after the previous step
-  // caused the event list to increase in size, then it needs to be
-  // re-constructed.
-  if (this->event_list->allowed_event_map.has_new_events()) {
+void AllowedKineticEventData<EventSelectorType,
+                             DebugMode>::make_event_selector_if_resized() {
+  if (this->event_list->allowed_event_map.has_been_resized()) {
     if constexpr (DebugMode) {
       Log &log = CASM::log();
-      log.custom("Select event requires re-constructing event selector");
+      log.custom("Reconstructing the event selector");
       log << std::endl;
       CASM::log().increase_indent();
     }
 
     this->make_event_selector();
-    this->event_list->allowed_event_map.clear_has_new_events();
 
     if constexpr (DebugMode) {
       CASM::log().decrease_indent();
@@ -847,31 +993,109 @@ void AllowedKineticEventData<EventSelectorType, DebugMode>::select_event(
     log << std::endl;
     log.end_section();
   }
+}
 
-  // The function `only_select_event` does the following:
-  // - Updates rates of events impacted by the *last* selected event (if there
-  //   was a previous selection)
-  // - Updates the total rate
-  // - If saving states, saves the state
-  // - Chooses an event and time increment
-  //
-  // It does not apply the event or set the impacted events.
+template <typename EventSelectorType, bool DebugMode>
+void AllowedKineticEventData<EventSelectorType, DebugMode>::set_impacted_events(
+    SelectedEvent &selected_event) {
+  Log &log = CASM::log();
+
+  // Set impacted events
+  this->event_selector->set_impacted_events(selected_event.event_index);
+
+  if (!this->use_event_groups) {
+    log.indent() << "- use_event_groups=false" << std::endl;
+    this->make_event_selector_if_resized();
+    this->event_selector->update_impacted_event_rates();
+    this->event_selector->clear_impacted_events();
+  } else {
+    log.indent() << "- use_event_groups=true" << std::endl;
+    this->regroup_impacted_events();
+  }
+}
+
+/// \brief Update for given state, conditions, occupants, event filters
+///
+/// - If there are no event groups, just select from the event selector
+/// - If there are event groups, determine which event group moves next
+template <typename EventSelectorType, bool DebugMode>
+void AllowedKineticEventData<EventSelectorType, DebugMode>::select_event(
+    SelectedEvent &selected_event, bool requires_event_state) {
   Index selected_event_index;
 
-  if (!this->state_graph) {
+  if (!this->use_event_groups) {
+    //    Log &log = CASM::log();
+    //    log.indent() << "- use_event_groups=false" << std::endl;
+    if (this->kmc_data == nullptr) {
+      throw std::runtime_error(
+          "Error in AllowedKineticEventData::select_event: "
+          "Cannot select event, kmc_data==nullptr");
+    }
+
+    // The function `only_select_event` does the following:
+    // - Updates rates of events impacted by the *last* selected event if that
+    //   hasn't been done yet (by checking if the impacted events ptr is set)
+    // - Updates the total rate
+    // - Chooses an event and time increment
+    //
+    // It does not apply the event or set the impacted events.
+
     std::tie(selected_event_index, selected_event.time_increment) =
         event_selector->only_select_event();
+    selected_event.time = this->kmc_data->time + selected_event.time_increment;
+    selected_event.total_rate = event_selector->total_rate();
+
   } else {
-    // update impacted event rates
-    event_selector->update_impacted_event_rates();
+    Log &log = CASM::log();
+    log.custom("Select event, using event groups");
+    log.indent() << "- use_event_groups=true..." << std::endl;
 
-    // save state
+    // Set `next_event_group` by finding which group moves next
+    this->set_next_event_group();
 
-    // determine next exit state & event
+    // Set selected event
+    selected_event.group = this->next_event_group;
+    log.indent() << "- next_event_group=" << this->next_event_group
+                 << std::endl;
+    auto const &g = *this->event_group[this->next_event_group];
+    log.indent() << "- g.next_event_index=" << g.next_event_index << std::endl;
+    log.indent() << "- g.next_time=" << g.next_time << std::endl;
+    log.indent() << "- g.next_time_increment=" << g.next_time_increment
+                 << std::endl;
+    log.indent() << "- g.next_state=" << g.next_state << std::endl;
+    selected_event_index = g.next_event_index;
+    selected_event.time = g.next_time;
+    selected_event.time_increment = g.next_time_increment;
+    selected_event.group_state = g.next_state;
 
-    // set state to exit state (TBD: checking if time is past next sample time)
+    if (selected_event_index == -1) {
+      throw std::runtime_error(
+          "Error in AllowedKineticEventData::select_event: "
+          "selected_event_index == -1");
+    }
+    if (selected_event_index >= this->event_list->allowed_event_map.n_total()) {
+      throw std::runtime_error(
+          "Error in AllowedKineticEventData::select_event: "
+          "selected_event_index >= n_total");
+    }
+    if (!this->event_list->allowed_event_map.event_data(selected_event_index)
+             .is_assigned) {
+      throw std::runtime_error(
+          "Error in AllowedKineticEventData::select_event: "
+          "selected_event_index is not assigned");
+    }
+
+    log.indent() << "- selected_group=" << this->next_event_group << std::endl;
+    log.indent() << "- selected_event_index=" << selected_event_index
+                 << std::endl;
+    log.indent() << "- next_state=" << selected_event.group_state << std::endl;
+    log.indent() << "- time=" << selected_event.time << std::endl;
+    log.indent() << "- time_increment=" << selected_event.time_increment
+                 << std::endl;
+    log.indent() << "- find next event overall... DONE" << std::endl;
+    log << std::endl;
+    log.end_section();
   }
-  selected_event.total_rate = event_selector->total_rate();
 
   EventID const &event_id =
       this->event_list->allowed_event_map.event_id(selected_event_index);
@@ -884,6 +1108,17 @@ void AllowedKineticEventData<EventSelectorType, DebugMode>::select_event(
   selected_event.event_index = selected_event_index;
   selected_event.event_data = &event_data;
   selected_event.prim_event_data = &prim_event_data;
+
+  {
+    Log &log = CASM::log();
+    log.indent() << "- selected={" << prim_event_data.event_type_name << ","
+                 << prim_event_data.equivalent_index << ","
+                 << prim_event_data.is_forward << "," << event_id.unitcell_index
+                 << "} / {" << event_id.unitcell_index << ","
+                 << event_id.prim_event_index << "}" << std::endl
+                 << std::endl;
+    log.end_section();
+  }
 
   if constexpr (DebugMode) {
     Log &log = CASM::log();
@@ -984,6 +1219,441 @@ void AllowedKineticEventData<EventSelectorType, DebugMode>::select_event(
     Log &log = CASM::log();
     log.end_section();
   }
+}
+
+/// \brief Find and regroup impacted events
+///
+/// - Checks if `event_selector` has impacted events
+/// - Evolve impacted EventGroup to the current time
+/// - Regroup impacted events
+/// - Set the next event and time for the impacted & new EventGroup
+/// - Determine the next event overall
+///
+template <typename EventSelectorType, bool DebugMode>
+void AllowedKineticEventData<EventSelectorType,
+                             DebugMode>::regroup_impacted_events() {
+  Log &log = CASM::log();
+
+  log.indent() << "- regrouping impacted events..." << std::endl;
+  log.indent() << "- checking event impact..." << std::endl;
+  if (!this->event_selector->has_impacted_events()) {
+    //    log.indent() << "- has_impacted_events=false" << std::endl;
+    log.indent() << "- regrouping impacted events... DONE" << std::endl;
+    return;
+  }
+
+  // Groups (including "ungrouped" group 0) impacted by the last event:
+  static std::set<Index> impacted_groups;
+  impacted_groups.clear();
+
+  // Groups (excluding "ungrouped" group 0) impacted by the last event:
+  static std::set<Index> impacted_groups_excluding_group_zero;
+  impacted_groups_excluding_group_zero.clear();
+
+  // Groups to update:
+  // - Groups that need the next selected event to be chosen
+  static std::set<Index> new_and_modified_groups;
+  new_and_modified_groups.clear();
+
+  // Groups that are merged into another group and need to be deleted:
+  static std::set<Index> groups_to_delete;
+  groups_to_delete.clear();
+
+  // Check last event impact
+  //  log.indent() << "- has_impacted_events=true" << std::endl;
+  auto &allowed_event_map = this->event_list->allowed_event_map;
+  for (Index event_index : this->event_selector->get_impacted_events()) {
+    Index group = allowed_event_map.event_group(event_index);
+    impacted_groups.insert(group);
+    if (group != 0) {
+      impacted_groups_excluding_group_zero.insert(group);
+    }
+  }
+  //  log.indent() << "- impacted_groups.size=" << impacted_groups.size()
+  //               << std::endl;
+  //  log.indent() << "- impacted_groups=" << qto_json(impacted_groups)
+  //               << std::endl;
+
+  // Resolve which state impacted groups are in at the time the event
+  if (this->kmc_data == nullptr) {
+    throw std::runtime_error(
+        "Error in AllowedKineticEventData::regroup_impacted_events: "
+        "Cannot evolve impacted groups to the current time, "
+        "kmc_data==nullptr");
+  }
+  this->resolve_state_for(this->kmc_data->time, impacted_groups);
+
+  // Regroup impacted events if necessary
+
+  // ----------------------------------- //
+  // case 1: 0 existing groups (excluding group 0) impacted
+  // - create a new group (up to max group size)
+  // - add all to new group, set index_in_group to -1
+  if (impacted_groups_excluding_group_zero.size() == 0) {
+    //    log.indent() << "- 0 existing groups impacted" << std::endl;
+    if (this->n_groups() >= 10) {
+      //      log.indent() << "- max group size reached" << std::endl;
+    } else {
+      //      log.indent() << "- max group size not reached" << std::endl;
+      Index new_group = this->add_group();
+      this->add_events_to_group(this->event_selector->get_impacted_events(),
+                                new_group);
+      new_and_modified_groups = impacted_groups;
+      new_and_modified_groups.insert(new_group);
+    }
+
+  }
+  // ----------------------------------- //
+  // case 2: 1 existing group impacted
+  // - add ungrouped impacted events to existing group
+  else if (impacted_groups_excluding_group_zero.size() == 1) {
+    Index existing_group = *impacted_groups_excluding_group_zero.begin();
+
+    //    log.indent() << "- 1 existing group impacted (group " <<
+    //    existing_group
+    //                 << ")" << std::endl;
+    //    log.increase_indent();
+    for (Index event_index : this->event_selector->get_impacted_events()) {
+      Index group = allowed_event_map.event_group(event_index);
+      if (group == 0) {
+        //        log.indent() << "- move event " << event_index << " from group
+        //        "
+        //                     << group << " to group " << existing_group <<
+        //                     std::endl;
+        allowed_event_map.set_event_group(event_index, existing_group);
+        allowed_event_map.set_event_index_in_group(event_index, -1);
+      }
+    }
+    log.decrease_indent();
+    new_and_modified_groups = impacted_groups;
+  }
+  // ----------------------------------- //
+  // case 3: >1 existing group impacted
+  // - merge existing groups
+  // - pick one existing group to keep,
+  // - add all impacted events to the existing group
+  // - schedule other existing groups for deletion
+  else {
+    //    log.indent() << "- >1 existing group impacted" << std::endl;
+    Index existing_group = *impacted_groups_excluding_group_zero.begin();
+    //    log.indent() << "- keeping group " << existing_group << std::endl;
+    //    log.increase_indent();
+    for (Index event_index : this->event_selector->get_impacted_events()) {
+      Index group = allowed_event_map.event_group(event_index);
+      if (group != existing_group) {
+        //        log.indent() << "- move event " << event_index << " from group
+        //        "
+        //                     << group << " to group " << existing_group <<
+        //                     std::endl;
+        allowed_event_map.set_event_group(event_index, existing_group);
+        allowed_event_map.set_event_index_in_group(event_index, -1);
+      }
+    }
+    //    log.decrease_indent();
+    for (Index group : impacted_groups) {
+      if (group == existing_group) {
+        new_and_modified_groups.insert(existing_group);
+      } else if (group != 0) {
+        groups_to_delete.insert(group);
+      }
+    }
+  }
+  // ----------------------------------- //
+
+  log.indent() << "- new_and_modified_groups="
+               << qto_json(new_and_modified_groups) << std::endl;
+  for (Index group : new_and_modified_groups) {
+    log.increase_indent();
+    log.indent() << "- group=" << group
+                 << " #events=" << this->event_group[group]->event.size()
+                 << std::endl;
+    log.decrease_indent();
+  }
+  log.indent() << "- groups_to_delete=" << qto_json(groups_to_delete)
+               << std::endl;
+  log.indent() << "- checking event impact... DONE" << std::endl;
+  log << std::endl;
+
+  this->make_event_selector_if_resized();
+  this->event_selector->update_impacted_event_rates();
+  this->event_selector->clear_impacted_events();
+
+  // If saving states, saves state
+  {
+    //    log.indent() << "- saving states..." << std::endl;
+    //    log.increase_indent();
+    for (Index group : new_and_modified_groups) {
+      auto &g = *this->event_group[group];
+      if (group != 0) {
+        //        log.indent() << "- save state (group=" << group << ")" <<
+        //        std::endl;
+        g.save_state(*this->state_data);
+      }
+      //      else {
+      //        log.indent() << "- do not save state (group=" << group << ")"
+      //                     << std::endl;
+      //      }
+    }
+    //    log.indent() << "- saving states... DONE" << std::endl;
+    //    log << std::endl;
+    //    log.decrease_indent();
+  }
+
+  //  if (selected_event.group_state != -1) {
+  //    log.indent() << "- restore state..." << std::endl;
+  //    // Restore selected state
+  //    this->event_group[selected_event.group]->restore_state(
+  //        selected_event.group_state, *this->state_data);
+  //    log.indent() << "- restore state... DONE" << std::endl;
+  //    log << std::endl;
+  //  }
+
+  // Select the next event for each new or modified group:
+  this->select_next_event_for(new_and_modified_groups);
+
+  // Delete groups scheduled for deletion
+  this->delete_groups(groups_to_delete);
+
+  // Finish
+  log.indent() << "- regrouping impacted events... DONE" << std::endl
+               << std::endl;
+}
+
+/// \brief Get the current number of groups (includes group 0)
+template <typename EventSelectorType, bool DebugMode>
+Index AllowedKineticEventData<EventSelectorType, DebugMode>::n_groups() {
+  Index n_groups = 0;
+  for (Index group = 0; group < this->event_group.size(); ++group) {
+    if (this->event_group[group] != nullptr) {
+      ++n_groups;
+    }
+  }
+  return n_groups;
+}
+
+/// \brief Construct and add a new event group
+///
+/// \return new_group The index of the new group
+template <typename EventSelectorType, bool DebugMode>
+Index AllowedKineticEventData<EventSelectorType, DebugMode>::add_group() {
+  Log &log = CASM::log();
+  Index new_group = 1;
+  while (new_group < this->event_group.size()) {
+    if (this->event_group[new_group] == nullptr) {
+      break;
+    }
+    ++new_group;
+  }
+  log.indent() << "- adding group " << new_group << std::endl;
+  if (this->kmc_data == nullptr) {
+    throw std::runtime_error(
+        "Error in AllowedKineticEventData::regroup_impacted_events: "
+        "Cannot evolve impacted groups to the current time, "
+        "kmc_data==nullptr");
+  }
+
+  // Determine the new group's current time - Use 0.0 as a default
+  monte::TimeType new_group_time = 0.0;
+  if (this->kmc_data != nullptr) {
+    new_group_time = this->kmc_data->time;
+  }
+  if (new_group == this->event_group.size()) {
+    this->event_group.emplace_back(
+        std::make_shared<event_group::EventGroup<DebugMode>>(
+            this->state_data, new_group_time, new_group));
+  } else {
+    this->event_group[new_group] =
+        std::make_shared<event_group::EventGroup<DebugMode>>(
+            this->state_data, new_group_time, new_group);
+  }
+  this->current_groups.insert(new_group);
+  return new_group;
+}
+
+/// \brief Add events to the specified event group
+///
+/// - This currently does not remove events from an existing group. It's
+///   expected existing groups other than group 0 will be deleted afterwards.
+///
+/// \param event_indices Indices of events to move into the group
+/// \param group Index of the event group
+template <typename EventSelectorType, bool DebugMode>
+void AllowedKineticEventData<EventSelectorType, DebugMode>::add_events_to_group(
+    std::vector<Index> const &event_indices, Index group) {
+  Log &log = CASM::log();
+  log.increase_indent();
+  AllowedEventMap &allowed_event_map = this->event_list->allowed_event_map;
+  for (Index event_index : event_indices) {
+    Index initial_group = allowed_event_map.event_group(event_index);
+    log.indent() << "- move event " << event_index << " from group "
+                 << initial_group << " to group " << group << std::endl;
+    allowed_event_map.set_event_group(event_index, group);
+    allowed_event_map.set_event_index_in_group(event_index, -1);
+  }
+  log.decrease_indent();
+}
+
+/// \brief Select the next event for specified event groups
+///
+/// \param groups Groups to update by selecting the next event to occur. May
+///     include group 0.
+template <typename EventSelectorType, bool DebugMode>
+void AllowedKineticEventData<EventSelectorType, DebugMode>::
+    select_next_event_for(std::set<Index> const &groups) {
+  Log &log = CASM::log();
+  log.indent() << "- Selecting next events..." << std::endl;
+  log.increase_indent();
+
+  // TODO: select events for each impacted / new group
+  for (Index group : groups) {
+    log.indent() << "- group=" << group << ":" << std::endl;
+    log.increase_indent();
+    auto &g = *this->event_group[group];
+    if (group == 0) {
+      if (this->event_selector->total_rate() == 0.0) {
+        log.indent() << "- NO ALLOWED EVENTS" << std::endl;
+
+        g.next_state = -1;
+        g.next_event_index = -1;
+        g.next_time_increment = std::numeric_limits<double>::max();
+        g.next_time = std::numeric_limits<double>::max();
+      } else {
+        log.indent() << "- select an ungrouped event" << std::endl;
+        g.next_state = -1;
+        std::tie(g.next_event_index, g.next_time_increment) =
+            this->event_selector->only_select_event();
+        g.next_time = g.current_time + g.next_time_increment;
+      }
+      log.indent() << "- total_rate=" << this->event_selector->total_rate()
+                   << std::endl;
+    } else {
+      g.select_next_event(*this->random_generator);
+    }
+
+    log.indent() << "- next_state=" << g.next_state << std::endl;
+    log.indent() << "- next_event_index=" << g.next_event_index << std::endl;
+    log.indent() << "- current_time=" << g.current_time << std::endl;
+    log.indent() << "- next_time_increment=" << g.next_time_increment
+                 << std::endl;
+    log.indent() << "- next_time=" << g.next_time << std::endl;
+    log.decrease_indent();
+  }
+  log.decrease_indent();
+  log.indent() << "- Selecting next events... DONE" << std::endl;
+  log << std::endl;
+}
+
+/// \brief Resolve which state all groups are in at the specified time,
+///    under the assumption that they only transition between transient
+///    states in the current chain
+template <typename EventSelectorType, bool DebugMode>
+void AllowedKineticEventData<EventSelectorType, DebugMode>::resolve_state(
+    monte::TimeType time) {
+  Log &log = CASM::log();
+  log.indent() << "- resolving state of all groups..." << std::endl;
+  log.increase_indent();
+  for (Index group = 0; group < this->event_group.size(); ++group) {
+    if (group == 0) {
+      continue;
+    }
+    if (this->event_group[group] == nullptr) {
+      log.indent() << "- group=" << group << " does not exist" << std::endl;
+      continue;
+    }
+    auto &g = *this->event_group[group];
+    log.indent() << "- group=" << group << ":" << std::endl;
+    g.resolve_state(time, *this->random_generator);
+  }
+
+  log.indent() << "- resolving state of all groups... DONE" << std::endl;
+  log << std::endl;
+  log.decrease_indent();
+}
+
+/// \brief Resolve which state specified groups are in at the specified time,
+///    under the assumption that they only transition between transient
+///    states in the current chain
+template <typename EventSelectorType, bool DebugMode>
+void AllowedKineticEventData<EventSelectorType, DebugMode>::resolve_state_for(
+    monte::TimeType time, std::set<Index> const &groups) {
+  Log &log = CASM::log();
+  log.indent() << "- resolving state for groups..." << std::endl;
+  log.increase_indent();
+  for (Index group : groups) {
+    auto &g = *this->event_group[group];
+    log.indent() << "- group=" << group << ":" << std::endl;
+    g.resolve_state(time, *this->random_generator);
+  }
+
+  log.indent() << "- resolving state for groups... DONE" << std::endl;
+  log << std::endl;
+  log.decrease_indent();
+}
+
+/// \brief Delete specified event groups
+///
+/// \param groups Groups to delete. Groups are deleted by resetting the
+///     corresponding `event_group` pointer to `nullptr`.
+template <typename EventSelectorType, bool DebugMode>
+void AllowedKineticEventData<EventSelectorType, DebugMode>::delete_groups(
+    std::set<Index> const &groups) {
+  Log &log = CASM::log();
+  log.indent() << "- delete groups..." << std::endl;
+  log.increase_indent();
+  for (Index group : groups) {
+    log.indent() << "- delete group " << group << std::endl;
+    this->event_group[group].reset();
+    this->current_groups.erase(group);
+  }
+  log.decrease_indent();
+  log.indent() << "- delete groups... DONE" << std::endl;
+}
+
+/// \brief Set `next_event_group` by finding which group moves next
+template <typename EventSelectorType, bool DebugMode>
+void AllowedKineticEventData<EventSelectorType,
+                             DebugMode>::set_next_event_group() {
+  Log &log = CASM::log();
+  log.indent() << "- find next event overall..." << std::endl;
+  log.increase_indent();
+
+  Index group = 0;
+  this->next_event_group = group;
+  double next_time;
+  double min_time;
+  {
+    log.indent() << "- group=" << group << ":" << std::endl;
+    log.increase_indent();
+
+    next_time = this->event_group[group]->next_time;
+    min_time = next_time;
+    log.indent() << "- next_time=" << next_time << "(min=" << min_time
+                 << ", selected_group=" << this->next_event_group << ")"
+                 << std::endl;
+    log.decrease_indent();
+  }
+
+  ++group;
+  for (; group < this->event_group.size(); ++group) {
+    log.indent() << "- group=" << group << ":" << std::endl;
+    log.increase_indent();
+    if (this->event_group[group] == nullptr) {
+      log.indent() << "- group does not exist" << std::endl;
+      log.decrease_indent();
+      continue;
+    }
+    next_time = this->event_group[group]->next_time;
+    if (next_time < min_time) {
+      min_time = next_time;
+      this->next_event_group = group;
+    }
+    log.indent() << "- next_time=" << next_time << "(min=" << min_time
+                 << ", selected_group=" << this->next_event_group << ")"
+                 << std::endl;
+    log.decrease_indent();
+  }
+  log.decrease_indent();
+  log.indent() << "- find next event overall... DONE" << std::endl << std::endl;
 }
 
 // Explicit instantiation:

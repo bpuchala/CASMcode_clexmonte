@@ -142,23 +142,6 @@ class MonteEventData {
     return m_data->prim_impact_info_list;
   }
 
-  /// Get the formation energy coefficients
-  clexulator::SparseCoefficients const &formation_energy_coefficients() const {
-    return m_data->formation_energy_coefficients();
-  }
-
-  /// Get the attempt frequency coefficients for a specific event
-  clexulator::SparseCoefficients const &freq_coefficients(
-      Index prim_event_index) const {
-    return m_data->freq_coefficients(prim_event_index);
-  }
-
-  /// Get the KRA coefficients for a specific event
-  clexulator::SparseCoefficients const &kra_coefficients(
-      Index prim_event_index) const {
-    return m_data->kra_coefficients(prim_event_index);
-  }
-
   // -- Custom event state calculation and handling functions --
 
   /// Set custom event state calculation functions
@@ -465,7 +448,7 @@ void print(Log &log, EventDataSummary const &event_data_summary) {
                << convert_size(x.resident_bytes_used) << std::endl;
   log.indent() << "- Event list size = " << x.event_list_size << std::endl;
   // Impact neighborhood sizes:
-  log.indent() << "- Impact neighborhood sizes (#sites): total (Ef / Ekra / "
+  log.indent() << "- Impact neighborhood sizes (#sites): total (Ef / Ef_kra / "
                   "freq)"
                << std::endl;
   for (auto const &pair : x.neighborhood_size_total) {

@@ -131,11 +131,6 @@ class CompleteKineticEventData : public BaseMonteEventData {
   /// Calculator for KMC event selection
   std::shared_ptr<CompleteEventCalculator<DebugMode>> event_calculator;
 
-  // -- State saving options & data --
-
-  /// \brief Stores saved states / FPTA (First Passage Time Analysis) data
-  std::shared_ptr<state_graph::StateGraph> state_graph;
-
   /// Event selector
   std::shared_ptr<event_selector_type> event_selector;
 
@@ -144,11 +139,17 @@ class CompleteKineticEventData : public BaseMonteEventData {
               std::optional<std::vector<EventFilterGroup>> _event_filters,
               std::shared_ptr<engine_type> engine) override;
 
+  // -- Data set when `run` is called --
+
+  /// \brief KMC data
+  std::shared_ptr<kmc_data_type> kmc_data;
+
   /// \brief Run the KMC simulation
   void run(state_type &state, monte::OccLocation &occ_location,
-           kmc_data_type &kmc_data, SelectedEvent &selected_event,
+           SelectedEvent &selected_event,
            std::optional<monte::SelectedEventDataCollector> &collector,
            run_manager_type &run_manager,
+           std::shared_ptr<kmc_data_type> _kmc_data,
            std::shared_ptr<occ_events::OccSystem> event_system) override;
 
   // -- Validators --
@@ -199,26 +200,6 @@ class CompleteKineticEventData : public BaseMonteEventData {
   }
 
   // --- BaseMonteEventData interface ---
-
-  // -- System data --
-
-  /// Get the formation energy coefficients
-  clexulator::SparseCoefficients const &formation_energy_coefficients()
-      const override {
-    return _prim_event_calculator(0).formation_energy_coefficients();
-  }
-
-  /// Get the attempt frequency coefficients for a specific event
-  clexulator::SparseCoefficients const &freq_coefficients(
-      Index prim_event_index) const override {
-    return _prim_event_calculator(prim_event_index).freq_coefficients();
-  }
-
-  /// Get the KRA coefficients for a specific event
-  clexulator::SparseCoefficients const &kra_coefficients(
-      Index prim_event_index) const override {
-    return _prim_event_calculator(prim_event_index).kra_coefficients();
-  }
 
   // --- Event selection ---
 
@@ -372,6 +353,9 @@ struct AllowedEventCalculator {
   /// \brief Allowed event list
   AllowedEventList &event_list;
 
+  /// \brief Event groups
+  std::vector<std::shared_ptr<event_group::EventGroup<DebugMode>>> &event_group;
+
   // Note: to keep all event state calculations, comment out this:
   /// \brief Holds last calculated event state
   EventState event_state;
@@ -399,7 +383,10 @@ struct AllowedEventCalculator {
   AllowedEventCalculator(
       std::vector<PrimEventData> const &_prim_event_list,
       std::vector<EventStateCalculator> const &_prim_event_calculators,
-      AllowedEventList &_event_list, bool _abnormal_event_handling_on,
+      AllowedEventList &_event_list,
+      std::vector<std::shared_ptr<event_group::EventGroup<DebugMode>>>
+          &_event_group,
+      bool _abnormal_event_handling_on,
       AbnormalEventHandlingFunction &_handling_f,
       std::map<std::string, Index> &_n_encountered_abnormal);
 
@@ -516,32 +503,52 @@ class AllowedKineticEventData : public BaseMonteEventData {
 
   // -- State saving options & data --
 
-  /// \brief Stores saved states / FPTA (First Passage Time Analysis) data
-  std::shared_ptr<state_graph::StateGraph> state_graph;
+  /// \brief If true, use `event_group`
+  bool use_event_groups;
+
+  /// \brief If `use_event_groups` is true, this is the next event group
+  ///     selected to occur
+  Index next_event_group;
+
+  /// \brief Event groups for state saving and first passage time analysis
+  std::vector<std::shared_ptr<event_group::EventGroup<DebugMode>>> event_group;
+
+  /// \brief The current event groups
+  std::set<Index> current_groups;
 
   // -- Event selector options --
 
   /// \brief Event selector
   std::shared_ptr<event_selector_type> event_selector;
 
+  /// \brief Return event selector type name
+  std::string event_selector_type_str() const;
+
+  /// \brief Constructs `event_selector` from the current `event_calculator`,
+  ///     `event_list`, and `random_generator`
+  void make_event_selector();
+
+  /// \brief Reconstruct the event selector if updating the allowed event list
+  ///     caused it to increase in size
+  void make_event_selector_if_resized();
+
   /// \brief Update for given state, conditions, and occupants
   void update(std::shared_ptr<StateData> _state_data,
               std::optional<std::vector<EventFilterGroup>> _event_filters,
               std::shared_ptr<engine_type> engine) override;
 
+  // -- Data set when `run` is called --
+
+  /// \brief KMC data
+  std::shared_ptr<kmc_data_type> kmc_data;
+
   /// \brief Run the KMC simulation
   void run(state_type &state, monte::OccLocation &occ_location,
-           kmc_data_type &kmc_data, SelectedEvent &selected_event,
+           SelectedEvent &selected_event,
            std::optional<monte::SelectedEventDataCollector> &collector,
            run_manager_type &run_manager,
+           std::shared_ptr<kmc_data_type> _kmc_data,
            std::shared_ptr<occ_events::OccSystem> event_system) override;
-
-  /// \brief Return event selector type name
-  std::string event_selector_type_str() const;
-
-  /// \brief Constructs `event_selector` from the current `event_list` and
-  /// `random_generator`; must be called after `update`
-  void make_event_selector();
 
   // -- Validators --
 
@@ -554,7 +561,7 @@ class AllowedKineticEventData : public BaseMonteEventData {
     }
     if (prim_event_index >= prim_event_calculators.size()) {
       throw std::runtime_error(
-          "AllowedKineticEventData::kra_coefficients: "
+          "Error in AllowedKineticEventData: "
           "prim_event_index (=" +
           std::to_string(prim_event_index) +
           ") >= prim_event_calculators.size()");
@@ -598,32 +605,48 @@ class AllowedKineticEventData : public BaseMonteEventData {
 
   // --- BaseMonteEventData interface ---
 
-  // -- System data --
-
-  /// Get the formation energy coefficients
-  clexulator::SparseCoefficients const &formation_energy_coefficients()
-      const override {
-    return _prim_event_calculator(0).formation_energy_coefficients();
-  }
-
-  /// Get the attempt frequency coefficients for a specific event
-  clexulator::SparseCoefficients const &freq_coefficients(
-      Index prim_event_index) const override {
-    return _prim_event_calculator(prim_event_index).freq_coefficients();
-  }
-
-  /// Get the KRA coefficients for a specific event
-  clexulator::SparseCoefficients const &kra_coefficients(
-      Index prim_event_index) const override {
-    return _prim_event_calculator(prim_event_index).kra_coefficients();
-  }
-
   // --- Event selection ---
+
+  /// \brief Set the impacted events based on the selected event and handle
+  ///     the consequences
+  void set_impacted_events(SelectedEvent &selected_event);
 
   /// \brief Select an event, and optionally re-calculate event state for the
   ///     selected event
   void select_event(SelectedEvent &selected_event,
                     bool requires_event_state) override;
+
+  /// \brief Find and regroup impacted events
+  void regroup_impacted_events();
+
+  /// \brief Get the current number of groups (includes group 0)
+  Index n_groups();
+
+  /// \brief Construct and add a new event group
+  Index add_group();
+
+  /// \brief Add events to the specified event group
+  void add_events_to_group(std::vector<Index> const &event_indices,
+                           Index group);
+
+  /// \brief Select the next event for specified event groups
+  void select_next_event_for(std::set<Index> const &groups);
+
+  /// \brief Resolve which state all groups are in at the specified time,
+  ///    under the assumption that they only transition between transient
+  ///    states in the current chain
+  void resolve_state(monte::TimeType time);
+
+  /// \brief Resolve which state specified groups are in at the specified time,
+  ///    under the assumption that they only transition between transient
+  ///    states in the current chain
+  void resolve_state_for(monte::TimeType time, std::set<Index> const &groups);
+
+  /// \brief Delete specified event groups
+  void delete_groups(std::set<Index> const &groups);
+
+  /// \brief Set `next_event_group` by finding which group moves next
+  void set_next_event_group();
 
   // -- Event list summary info --
 

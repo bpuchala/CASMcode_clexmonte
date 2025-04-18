@@ -6,6 +6,9 @@
 #include "casm/monte/Conversions.hh"
 #include "casm/monte/events/OccLocation.hh"
 
+// debug
+#include "casm/casm_io/Log.hh"
+
 namespace CASM {
 namespace clexmonte {
 
@@ -68,6 +71,8 @@ AllowedEventList::AllowedEventList(
   }
 
   // Assign allowed events to `allowed_event_map`
+  Index group = 0;
+  Index index_in_group = -1;
   Index max_n_impacted = 0;
   std::vector<Index> linear_site_index;
   for (Index unitcell_index = 0; unitcell_index < n_unitcells;
@@ -87,7 +92,7 @@ AllowedEventList::AllowedEventList(
         EventID event_id(prim_event_index, unitcell_index);
 
         // assign event
-        allowed_event_map.assign(event_id);
+        allowed_event_map.assign(event_id, group, index_in_group);
       }
     }
   }
@@ -101,8 +106,8 @@ AllowedEventList::AllowedEventList(
 /// \brief Returns a list of indices of events that are impacted by the
 /// selected event (undefined if `selected_event_index` is out of range)
 ///
-/// Also sets `allowed_event_map.has_new_events()` to false if `events` does not
-/// change size or true if it does
+/// Also sets `allowed_event_map.has_been_resized()` to false if `events` does
+/// not change size or true if it does
 std::vector<Index> const &AllowedEventList::make_impact_list(
     Index selected_event_index) {
   // get `selected_event_id`
@@ -111,7 +116,7 @@ std::vector<Index> const &AllowedEventList::make_impact_list(
 
   // set `impact_list` and update `events`
   impact_list.clear();
-  this->allowed_event_map.clear_has_new_events();
+  this->allowed_event_map.clear_has_been_resized();
   std::vector<EventID> const &impacted_event_ids =
       use_neighborlist_impact_table
           ? this->neighborlist_impact_table.value()(selected_event_id)
@@ -120,6 +125,8 @@ std::vector<Index> const &AllowedEventList::make_impact_list(
   if (assign_allowed_events_only) {
     // approach 1: include assigned events,
     // and only assign new events that are allowed
+    Index group = 0;
+    Index index_in_group = -1;
 
     static std::vector<Index> linear_site_index;
     for (auto const &event_id : impacted_event_ids) {
@@ -140,14 +147,19 @@ std::vector<Index> const &AllowedEventList::make_impact_list(
             this->neighbor_index[event_id.prim_event_index], *supercell_nlist);
         if (event_is_allowed(linear_site_index, dof_values, prim_event_data)) {
           // assign event
-          this->impact_list.push_back(allowed_event_map.assign(it, event_id));
+          this->impact_list.push_back(
+              allowed_event_map.assign(it, event_id, group, index_in_group));
         }
       }
     }
   } else {
+    Index group = 0;
+    Index index_in_group = -1;
+
     // approach 2: include all possible impacted events
     for (auto const &event_id : impacted_event_ids) {
-      this->impact_list.push_back(this->allowed_event_map.assign(event_id));
+      this->impact_list.push_back(
+          this->allowed_event_map.assign(event_id, group, index_in_group));
     }
   }
 

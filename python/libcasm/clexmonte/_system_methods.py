@@ -89,7 +89,7 @@ def read_abnormal_events(
 
             {
               "event_state": {
-                "Ekra": 0.7375,
+                "Ef_kra": 0.7375,
                 "dE_activated": 1.6666666666666665,
                 "dE_final": 1.6666666666666665,
                 "formation_energy_delta_corr": [

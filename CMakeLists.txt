@@ -115,6 +115,7 @@ set(
   ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/definitions.hh
   ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/events/AllowedEventList.hh
   ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/events/CompleteEventList.hh
+  ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/events/EventGroup.hh
   ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/events/ImpactTable.hh
   ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/events/event_data.hh
   ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/events/event_methods.hh
@@ -209,6 +210,7 @@ set(
   ${PROJECT_SOURCE_DIR}/src/casm/clexmonte/canonical/canonical.cc
   ${PROJECT_SOURCE_DIR}/src/casm/clexmonte/events/AllowedEventList.cc
   ${PROJECT_SOURCE_DIR}/src/casm/clexmonte/events/CompleteEventList.cc
+  ${PROJECT_SOURCE_DIR}/src/casm/clexmonte/events/EventGroup.cc
   ${PROJECT_SOURCE_DIR}/src/casm/clexmonte/events/ImpactTable.cc
   ${PROJECT_SOURCE_DIR}/src/casm/clexmonte/events/event_data.cc
   ${PROJECT_SOURCE_DIR}/src/casm/clexmonte/events/event_methods.cc

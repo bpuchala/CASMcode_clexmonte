@@ -6,6 +6,7 @@
 #include <optional>
 #include <vector>
 
+#include "casm/clexmonte/events/EventGroup.hh"
 #include "casm/clexmonte/events/ImpactTable.hh"
 #include "casm/clexmonte/events/event_data.hh"
 
@@ -24,10 +25,21 @@ class OccLocation;
 namespace clexmonte {
 
 struct AllowedEventData {
-  AllowedEventData() : is_assigned(false), event_id(-1, -1) {}
+  AllowedEventData()
+      : is_assigned(false), event_id(-1, -1), group(-1), index_in_group(-1) {}
 
   AllowedEventData(bool is_assigned, EventID event_id)
-      : is_assigned(is_assigned), event_id(event_id) {}
+      : is_assigned(is_assigned),
+        event_id(event_id),
+        group(-1),
+        index_in_group(-1) {}
+
+  AllowedEventData(bool is_assigned, EventID event_id, Index group,
+                   Index index_in_group)
+      : is_assigned(is_assigned),
+        event_id(event_id),
+        group(group),
+        index_in_group(index_in_group) {}
 
   /// \brief Whether the event_id is assigned
   bool is_assigned;
@@ -36,6 +48,15 @@ struct AllowedEventData {
   ///
   /// This may be in an invalid state if `is_assigned` is false.
   EventID event_id;
+
+  /// \brief The EventGroup containing the event
+  ///
+  /// - group==0 is special "ungrouped" group: events are not added to
+  ///   EventGroup.event for this group
+  Index group;
+
+  /// \brief The index of the event in EventGroup.event (if group!=0)
+  Index index_in_group;
 };
 
 /// \brief Data structure storing mapping between EventIDs and event index into
@@ -56,7 +77,7 @@ class AllowedEventMap {
   AllowedEventMap(bool use_map_index = true)
       : m_use_map_index(use_map_index),
         m_n_assigned(0),
-        m_has_new_events(false) {}
+        m_has_been_resized(false) {}
 
   Index n_total() const { return m_events.size(); }
 
@@ -112,9 +133,39 @@ class AllowedEventMap {
     }
   }
 
+  /// \brief Access the AllowedEventData from event index (undefined out of
+  /// range)
+  AllowedEventData &event_data(Index index) { return m_events[index]; }
+
+  /// \brief Access the AllowedEventData from event index (undefined out of
+  /// range)
+  AllowedEventData const &event_data(Index index) const {
+    return m_events[index];
+  }
+
   /// \brief Get the EventID from event index (undefined out of range)
   EventID const &event_id(Index index) const {
     return m_events[index].event_id;
+  }
+
+  /// \brief Get the EventGroup index from event index (undefined out of range)
+  Index event_group(Index index) const { return m_events[index].group; }
+
+  /// \brief Get the The index of the event in EventGroup.event from event index
+  ///     (undefined out of range)
+  Index event_index_in_group(Index index) const {
+    return m_events[index].index_in_group;
+  }
+
+  /// \brief Set the EventGroup index and EventGroup.event index (undefined out
+  /// of range)
+  void set_event_group(Index index, Index group) {
+    m_events[index].group = group;
+  }
+
+  /// \brief Set the EventGroup.event index (undefined out of range)
+  void set_event_index_in_group(Index index, Index index_in_group) {
+    m_events[index].index_in_group = index_in_group;
   }
 
   /// \brief Get the index of an assigned event (undefined if not assigned)
@@ -158,7 +209,7 @@ class AllowedEventMap {
     while (m_events.size() < n) {
       m_available.push_back(m_events.size());
       m_events.push_back({false, EventID(-1, -1)});
-      m_has_new_events = true;
+      m_has_been_resized = true;
     }
   }
 
@@ -166,7 +217,7 @@ class AllowedEventMap {
   ///
   /// If already assigned, return the event index; otherwise, assign the event
   /// and return the event index. If there are no unassigned events elements,
-  /// then add a new element to the `events` list and set `has_new_events` to
+  /// then add a new element to the `events` list and set `has_been_resized` to
   /// true.
   Index assign(EventID const &event_id) {
     auto it = find(event_id);
@@ -178,7 +229,49 @@ class AllowedEventMap {
     if (m_available.empty()) {
       m_available.push_back(m_events.size());
       m_events.push_back({false, EventID()});
-      m_has_new_events = true;
+      m_has_been_resized = true;
+    }
+
+    Index index = m_available.back();
+    if (m_use_map_index) {
+      _set_map_index(event_id, index);
+    } else {
+      _set_vec_index(event_id, index);
+    }
+    AllowedEventData &event_data = m_events[index];
+    event_data.is_assigned = true;
+    event_data.event_id = event_id;
+    m_n_assigned++;
+    m_available.pop_back();
+    return index;
+  }
+
+  /// \brief Assign an event ID to an event index and set group and
+  /// index_in_group
+  ///
+  /// Calls `assign(EventID const &event_id)`, then sets group and
+  /// index_in_group
+  Index assign(EventID const &event_id, Index group, Index index_in_group) {
+    Index index = assign(event_id);
+    AllowedEventData &event_data = m_events[index];
+    event_data.group = group;
+    event_data.index_in_group = index_in_group;
+    return index;
+  }
+
+  /// \brief Assign an event ID to an event index
+  ///
+  /// - This overload uses an existing `find` result to avoid a second lookup
+  Index assign(std::vector<AllowedEventData>::const_iterator it,
+               EventID const &event_id) {
+    if (it != m_events.end()) {
+      return std::distance(events().begin(), it);
+    }
+
+    if (m_available.empty()) {
+      m_available.push_back(m_events.size());
+      m_events.push_back({false, EventID()});
+      m_has_been_resized = true;
     }
 
     Index index = m_available.back();
@@ -198,37 +291,22 @@ class AllowedEventMap {
   /// \brief Assign an event ID to an event index
   ///
   /// - This overload uses an existing `find` result to avoid a second lookup
+  /// - Calls `assign(std::vector<AllowedEventData>::const_iterator it,
+  ///   EventID const &event_id)`, then sets group and index_in_group
   Index assign(std::vector<AllowedEventData>::const_iterator it,
-               EventID const &event_id) {
-    if (it != m_events.end()) {
-      return std::distance(events().begin(), it);
-    }
-
-    if (m_available.empty()) {
-      m_available.push_back(m_events.size());
-      m_events.push_back({false, EventID()});
-      m_has_new_events = true;
-    }
-
-    Index index = m_available.back();
-    if (m_use_map_index) {
-      _set_map_index(event_id, index);
-    } else {
-      _set_vec_index(event_id, index);
-    }
+               EventID const &event_id, Index group, Index index_in_group) {
+    Index index = assign(it, event_id);
     AllowedEventData &event_data = m_events[index];
-    event_data.is_assigned = true;
-    event_data.event_id = event_id;
-    m_n_assigned++;
-    m_available.pop_back();
+    event_data.group = group;
+    event_data.index_in_group = index_in_group;
     return index;
   }
 
   /// \brief If true, the `events` list has been expanded
-  bool has_new_events() const { return m_has_new_events; }
+  bool has_been_resized() const { return m_has_been_resized; }
 
   /// \brief Set the flag that the `events` list has been expanded to false
-  void clear_has_new_events() { m_has_new_events = false; }
+  void clear_has_been_resized() { m_has_been_resized = false; }
 
   /// \brief Free (un-assign) an element of `events` by index; do nothing if
   /// already unassigned; (undefined if index out of range)
@@ -333,7 +411,7 @@ class AllowedEventMap {
   Index m_n_assigned;
 
   // \brief If true, the `events` list has been expanded
-  bool m_has_new_events;
+  bool m_has_been_resized;
 };
 
 /// \brief Data structure for KMC storing only the allowed events
@@ -354,11 +432,11 @@ class AllowedEventMap {
 ///     events are impacted and update `events` to contain all the impacted
 ///     events, if possible.
 ///   - If `events` does not have space to include all impacted events, then
-///     `AllowedEventList::allowed_event_map.has_new_events` is set to true;
+///     `AllowedEventList::allowed_event_map.has_been_resized` is set to true;
 ///     otherwise, it is set to false.
 ///   - Updates `AllowedEventList::impact_list` to contain the elements of
 ///     `events` that must be updated before the next event is selected.
-///   - If `AllowedEventList::allowed_event_map.has_new_events` is true, then
+///   - If `AllowedEventList::allowed_event_map.has_been_resized` is true, then
 ///     the event selector must be rebuilt after applying the selected event,
 ///     but before selecting the next event.
 ///

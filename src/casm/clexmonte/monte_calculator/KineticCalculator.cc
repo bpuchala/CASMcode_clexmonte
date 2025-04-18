@@ -84,11 +84,11 @@ KineticCalculator::KineticCalculator()
           {"verbosity", "print_event_data_summary", "mol_composition_tol",
            "event_data_type", "event_selector_type", "abnormal_event_handling",
            "impact_table_type", "assign_allowed_events_only",
-           "selected_event_data"},  // optional_params,
-          true,                     // time_sampling_allowed,
-          true,                     // update_atoms,
-          false,                    // save_atom_info,
-          false                     // is_multistate_method,
+           "selected_event_data", "state_graph"},  // optional_params,
+          true,                                    // time_sampling_allowed,
+          true,                                    // update_atoms,
+          false,                                   // save_atom_info,
+          false                                    // is_multistate_method,
       ) {
   // this could go into base constructor
   this->selected_event = std::make_shared<SelectedEvent>();
@@ -516,9 +516,8 @@ void KineticCalculator::run(state_type &state, monte::OccLocation &occ_location,
         "Error in KineticCalculator::run: this->selected_event==nullptr");
   }
 
-  this->event_data->run(state, occ_location, *this->kmc_data,
-                        *this->selected_event, collector, run_manager,
-                        event_system);
+  this->event_data->run(state, occ_location, *this->selected_event, collector,
+                        run_manager, this->kmc_data, event_system);
 
   //  // Function to set selected event
   //  bool requires_event_state =
@@ -724,10 +723,15 @@ void KineticCalculator::_reset() {
     if (selected_event_data_subparser->valid()) {
       this->selected_event_function_params =
           std::move(selected_event_data_subparser->value);
+      log.indent() << "selected_event_data="
+                   << qto_json(*this->selected_event_function_params)
+                   << std::endl;
+    } else {
+      log.indent() << "selected_event_data=invalid" << std::endl;
     }
+  } else {
+    log.indent() << "selected_event_data=null" << std::endl;
   }
-  log.indent() << "selected_event_data=" << qto_json(this->event_filters)
-               << std::endl;
 
   // Read "event_data_type"
   // - "high_memory": complete event list,
@@ -856,6 +860,80 @@ void KineticCalculator::_reset() {
   ///     calculation).
   read_option(parser, log, this->event_data_options.assign_allowed_events_only,
               "assign_allowed_events_only", true);
+
+  // -- State saving
+  if (parser.self.contains("state_graph")) {
+    fs::path base("state_graph");
+    check_params(params[base], {} /*required_params*/,
+                 {"state_selection", "event_selection", "n_recent_events",
+                  "n_states"} /*optional_params*/,
+                 base);
+
+    this->event_data_options.state_graph_options = state_graph::Options();
+    state_graph::Options &opt = *this->event_data_options.state_graph_options;
+
+    // "state_graph"/"state_selection":
+    // - "n_jump_first", "basin_jump_first", "n_look_first", "basin_look_first"
+    std::string state_selection_str = "n_jump_first";
+    parser.optional(state_selection_str, "state_selection");
+    if (state_selection_str == "n_jump_first") {
+      opt.state_selection_method =
+          state_graph::StateSelectionMethod::N_JUMP_FIRST;
+      log.indent() << "state_graph/state_selection="
+                   << "\"n_jump_first\"" << std::endl;
+    } else if (state_selection_str == "basin_jump_first") {
+      opt.state_selection_method =
+          state_graph::StateSelectionMethod::BASIN_JUMP_FIRST;
+      log.indent() << "state_graph/state_selection="
+                   << "\"basin_jump_first\"" << std::endl;
+    } else if (state_selection_str == "n_look_first") {
+      opt.state_selection_method =
+          state_graph::StateSelectionMethod::N_LOOK_FIRST;
+      log.indent() << "state_graph/state_selection="
+                   << "\"n_look_first\"" << std::endl;
+    } else if (state_selection_str == "basin_look_first") {
+      opt.state_selection_method =
+          state_graph::StateSelectionMethod::BASIN_LOOK_FIRST;
+      log.indent() << "state_graph/state_selection="
+                   << "\"basin_look_first\"" << std::endl;
+    } else {
+      parser.insert_error(base / "state_selection",
+                          "Invalid state_selection: " + state_selection_str);
+    }
+
+    // "state_graph"/"event_selection"
+    // - "first_passage_time_analysis", "mean_rate_method", "memory_only"
+    std::string event_selection_str = "memory_only";
+    parser.optional(event_selection_str, "memory_only");
+    if (event_selection_str == "first_passage_time_analysis") {
+      opt.event_selection_method =
+          state_graph::EventSelectionMethod::FIRST_PASSAGE_TIME_ANALYSIS;
+      log.indent() << "state_graph/event_selection="
+                   << "\"first_passage_time_analysis\"" << std::endl;
+    } else if (event_selection_str == "mean_rate_method") {
+      opt.event_selection_method =
+          state_graph::EventSelectionMethod::MEAN_RATE_METHOD;
+      log.indent() << "state_graph/event_selection="
+                   << "\"mean_rate_method\"" << std::endl;
+    } else if (event_selection_str == "memory_only") {
+      opt.event_selection_method =
+          state_graph::EventSelectionMethod::MEMORY_ONLY;
+      log.indent() << "state_graph/event_selection="
+                   << "\"memory_only\"" << std::endl;
+    } else {
+      parser.insert_error(base / "event_selection",
+                          "Invalid event_selection: " + event_selection_str);
+    }
+
+    // "state_graph" / "n_recent_events"
+    read_option(parser, log, opt.n_recent_events, base / "n_recent_events",
+                100);
+
+    // "state_graph" / "n_states"
+    read_option(parser, log, opt.n_states, base / "n_states", 20);
+  } else {
+    log.indent() << "state_graph=null" << std::endl;
+  }
 
   log << std::endl;
   log.end_section();

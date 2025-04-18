@@ -8,11 +8,10 @@ namespace clexmonte {
 namespace state_graph {
 
 Options::Options()
-    : n_recent_events(100),
-      start_saving_unique_recent_events_frac(0.1),
-      start_saving_energy_per_unitcell(std::nullopt),
-      stop_saving_occ_prob_sum(100.0),
-      stop_saving_energy_per_unitcell(std::nullopt) {}
+    : state_selection_method(StateSelectionMethod::N_JUMP_FIRST),
+      event_selection_method(EventSelectionMethod::MEMORY_ONLY),
+      n_recent_events(100),
+      n_states(20) {}
 
 ReferenceState::ReferenceState() : energy_per_supercell(0.0) {}
 
@@ -55,7 +54,7 @@ Edge::Edge()
       rate_final_to_init(0.0) {}
 
 StateGraph::StateGraph(Options const &_opt)
-    : opt(_opt), do_save_states(false) {}
+    : opt(_opt), current_state(-1), do_save_states(false) {}
 
 /// \brief Store the most recent event ID in the recent events queue
 ///
@@ -96,16 +95,16 @@ void StateGraph::push_recent_event(EventID const &event_id) {
     recent_events.pop();  // Remove it from the queue
   }
 
-  // Update whether states should be saved based on the fraction of recent
-  // events that are unique
-  if (do_save_states == false &&
-      recent_events.size() == this->opt.n_recent_events) {
-    double unique_frac = this->unique_recent_events_frac();
-    if (unique_frac < this->opt.start_saving_unique_recent_events_frac) {
-      // If the unique fraction is below the threshold, do not save states
-      do_save_states = true;
-    }
-  }
+  //  // Update whether states should be saved based on the fraction of recent
+  //  // events that are unique
+  //  if (do_save_states == false &&
+  //      recent_events.size() == this->opt.n_recent_events) {
+  //    double unique_frac = this->unique_recent_events_frac();
+  //    if (unique_frac < this->opt.start_saving_unique_recent_events_frac) {
+  //      // If the unique fraction is below the threshold, do not save states
+  //      do_save_states = true;
+  //    }
+  //  }
 }
 
 /// \brief Calculate the fraction of recent events which are unique

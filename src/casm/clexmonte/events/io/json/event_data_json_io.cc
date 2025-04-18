@@ -21,17 +21,15 @@ jsonParser &to_json(EventState const &event_state, jsonParser &json) {
     }
     json["is_normal"] = event_state.is_normal;
     json["dE_final"] = event_state.dE_final;
-    json["Ekra"] = event_state.Ekra;
+    json["Ef_kra"] = event_state.Ef_kra;
     json["dE_activated"] = event_state.dE_activated;
     json["freq"] = event_state.freq;
     json["rate"] = event_state.rate;
-    json["d_generalized_enthalpy_final"] =
-        event_state.d_generalized_enthalpy_final;
-    json["d_generalized_enthalpy_activated"] =
-        event_state.d_generalized_enthalpy_activated;
+    json["dEf_final"] = event_state.dEf_final;
+    json["dEf_activated"] = event_state.dEf_activated;
     json["reverse_rate"] = event_state.reverse_rate;
     json["dS_final"] = event_state.dS_final;
-    json["Skra"] = event_state.Skra;
+    json["S_kra"] = event_state.S_kra;
     json["dS_activated"] = event_state.dS_activated;
   }
   return json;
@@ -161,6 +159,7 @@ jsonParser &to_json(
   json["event_id"] = selected_event.event_id;
   json["event_index"] = selected_event.event_index;
   json["total_rate"] = selected_event.total_rate;
+  json["time"] = selected_event.time;
   json["time_increment"] = selected_event.time_increment;
 
   if (selected_event.prim_event_data) {
@@ -175,6 +174,10 @@ jsonParser &to_json(
   if (selected_event.event_state) {
     to_json(*selected_event.event_state, json["event_state"]);
   }
+
+  json["group"] = selected_event.group;
+  json["group_state"] = selected_event.group_state;
+
   return json;
 }
 

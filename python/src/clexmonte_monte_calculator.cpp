@@ -1013,9 +1013,9 @@ PYBIND11_MODULE(_clexmonte_monte_calculator, m) {
                      R"pbdoc(
           float: Final state energy, relative to initial state.
           )pbdoc")
-      .def_readwrite("Ekra", &clexmonte::EventState::Ekra,
+      .def_readwrite("Ef_kra", &clexmonte::EventState::Ef_kra,
                      R"pbdoc(
-          float: KRA energy (eV).
+          float: KRA formation energy (eV).
           )pbdoc")
       .def_readwrite("dE_activated", &clexmonte::EventState::dE_activated,
                      R"pbdoc(
@@ -1028,7 +1028,7 @@ PYBIND11_MODULE(_clexmonte_monte_calculator, m) {
           This value is only calculated if an entropy cluster expansion has been
           included in the system, otherwise it is zero.
           )pbdoc")
-      .def_readwrite("Skra", &clexmonte::EventState::Skra,
+      .def_readwrite("S_kra", &clexmonte::EventState::S_kra,
                      R"pbdoc(
           float: KRA entropy (if calculated).
 
@@ -1051,15 +1051,13 @@ PYBIND11_MODULE(_clexmonte_monte_calculator, m) {
                      R"pbdoc(
           float: Event rate (1/s)
           )pbdoc")
-      .def_readwrite("d_generalized_enthalpy_final",
-                     &clexmonte::EventState::d_generalized_enthalpy_final,
+      .def_readwrite("dEf_final", &clexmonte::EventState::dEf_final,
                      R"pbdoc(
-          float: Final state free energy, relative to initial state.
+          float: Final formation energy, relative to initial state.
           )pbdoc")
-      .def_readwrite("d_generalized_enthalpy_activated",
-                     &clexmonte::EventState::d_generalized_enthalpy_final,
+      .def_readwrite("dEf_activated", &clexmonte::EventState::dEf_activated,
                      R"pbdoc(
-          float: Activated state free energy, relative to initial state.
+          float: Activated state formation energy, relative to initial state.
           )pbdoc")
       .def_readwrite("reverse_rate", &clexmonte::EventState::reverse_rate,
                      R"pbdoc(
@@ -1212,9 +1210,14 @@ PYBIND11_MODULE(_clexmonte_monte_calculator, m) {
                     R"pbdoc(
           float: The total rate when the event was selected.
           )pbdoc")
+      .def_readonly("time", &clexmonte::SelectedEvent::time,
+                    R"pbdoc(
+          float: The time when the event occurred.
+          )pbdoc")
       .def_readonly("time_increment", &clexmonte::SelectedEvent::time_increment,
                     R"pbdoc(
-          float: The time increment when the event occurred.
+          float: The time increment between when the event occurred and when
+          the event group's last event occurred.
           )pbdoc")
       .def_readonly("prim_event_data",
                     &clexmonte::SelectedEvent::prim_event_data,
@@ -1236,6 +1239,14 @@ PYBIND11_MODULE(_clexmonte_monte_calculator, m) {
           functions, after the event is selected, the state of the selected
           event will be calculated and this will have a value; otherwise it
           will be None.
+          )pbdoc")
+      .def_readonly("group", &clexmonte::SelectedEvent::group,
+                    R"pbdoc(
+          int: Event group index, if applicable
+          )pbdoc")
+      .def_readonly("group_state", &clexmonte::SelectedEvent::group_state,
+                    R"pbdoc(
+          int: Event group state index, if applicable
           )pbdoc")
       .def(
           "to_dict",
@@ -1688,16 +1699,16 @@ PYBIND11_MODULE(_clexmonte_monte_calculator, m) {
                       new_occ=c.curr_prim_event_data().occ_final,
                   )
 
-                  # Calculate Ekra and attempt frequency
+                  # Calculate Ef_kra and attempt frequency
                   event_clex_values = c.event_clex.value(
                       unitcell_index=c.curr_unitcell_index(),
                       equivalent_index=c.curr_prim_event_data().equivalent_index,
                   )
                   s.freq = event_clex_values[c.freq_index]
-                  s.Ekra = event_clex_values[c.kra_index]
+                  s.Ef_kra = event_clex_values[c.kra_index]
 
                   # Calculate activated state energy
-                  s.dE_activated = s.dE_final * 0.5 + s.Ekra
+                  s.dE_activated = s.dE_final * 0.5 + s.Ef_kra
 
                   # Check for barrier-less events
                   s.is_normal =

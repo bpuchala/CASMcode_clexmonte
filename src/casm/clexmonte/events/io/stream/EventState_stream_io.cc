@@ -15,7 +15,7 @@ void print(Log &log, EventState const &event_state) {
     log.indent() << "dE_final: " << event_state.dE_final << std::endl;
     log.indent() << "is_normal: " << std::boolalpha << event_state.is_normal
                  << std::endl;
-    log.indent() << "Ekra: " << event_state.Ekra << std::endl;
+    log.indent() << "Ef_kra: " << event_state.Ef_kra << std::endl;
     log.indent() << "freq: " << event_state.freq << std::endl;
     log.indent() << "rate: " << event_state.rate << std::endl;
   }

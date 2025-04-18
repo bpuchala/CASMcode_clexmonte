@@ -188,7 +188,7 @@ def summarize(local_configurations, event_data):
                 s = entry.get("event_state")
                 print(
                     f"- {i}: ",
-                    f"Ekra={s['Ekra']:.6f}",
+                    f"Ef_kra={s['Ef_kra']:.6f}",
                     f"dE_final={s['dE_final']:.6f}",
                     f"dE_activated= {s['dE_activated']:.6f}",
                 )

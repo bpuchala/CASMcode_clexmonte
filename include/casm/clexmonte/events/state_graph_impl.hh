@@ -17,18 +17,73 @@ namespace state_graph {
 /// \param selected_event The SelectedEvent from the previous configuration
 /// to `config`
 template <typename EventSelectorType>
-void StateGraph::save_state(config_type const &config,
-                            SelectedEvent const &selected_event,
-                            AllowedEventMap const &allowed_event_map,
-                            EventSelectorType const &event_selector,
-                            std::optional<Index> state_init) {
+void StateGraph::save_current_state(config_type const &config,
+                                    SelectedEvent const &selected_event,
+                                    EventSelectorType const &event_selector,
+                                    std::optional<Index> previous_state) {
+  Index new_state_index = this->state.size();
+  this->state.emplace_back();
+  State &new_state = this->state.back();
+
+  // -- Save energy --
+  if (previous_state.has_value()) {
+    if (selected_event.event_state == nullptr) {
+      throw std::runtime_error(
+          "Error in StateGraph::save_state: "
+          "previous_state has value and selected_event.event_state is null");
+    }
+
+    EventState const &event_state = *selected_event.event_state;
+    new_state.dE = this->state[*previous_state].dE + event_state.dE_final;
+  } else {
+    new_state.dE = 0.0;
+  }
+
+  // -- Save occ --
+  // store the occ value on the existing mutated sites from `config`
+  Eigen::VectorXi const &occupation = config.dof_values.occupation;
+  for (Index l : this->reference.linear_site_index) {
+    new_state.occ.push_back(occupation(l));
+  }
+
+  // -- Save rates --
+  // store the rate for the existing affected events from `config`
+  for (EventID const &event_id : this->reference.event_id) {
+    new_state.rate.push_back(event_selector->get_rate(event_id));
+  }
+
+  // -- Save total rate --
+  new_state.total_rate = event_selector.total_rate();
+
+  // -- Add edge --
+  if (previous_state.has_value()) {
+    EventState const &event_state = *selected_event.event_state;
+    this->edge.emplace_back();
+    Edge &new_edge = this->edge.back();
+    new_edge.state_init = *previous_state;
+    new_edge.state_final = new_state_index;
+    new_edge.rate_init_to_final = event_state.rate;
+    new_edge.rate_final_to_init = event_state.reverse_rate;
+  }
+}
+
+/// \brief Save state
+///
+/// \param config The configuration of the state being added
+/// \param selected_event The SelectedEvent from the previous configuration
+/// to `config`
+template <typename EventSelectorType>
+void StateGraph::save_current_state(config_type const &config,
+                                    SelectedEvent const &selected_event,
+                                    EventSelectorType const &event_selector,
+                                    AllowedEventMap const &allowed_event_map,
+                                    std::optional<Index> previous_state) {
   if (selected_event.event_data == nullptr) {
     throw std::runtime_error(
         "Error in StateGraph::save_state: "
         "selected_event.event_data is null");
   }
 
-  EventState const &event_state = *selected_event.event_state;
   monte::OccEvent const &event = selected_event.event_data->event;
 
   Index new_state_index = this->state.size();
@@ -36,8 +91,9 @@ void StateGraph::save_state(config_type const &config,
   State &new_state = this->state.back();
 
   // -- Save energy --
-  if (state_init.has_value()) {
-    new_state.dE = this->state[*state_init].dE + event_state.dE_final;
+  if (previous_state.has_value()) {
+    EventState const &event_state = *selected_event.event_state;
+    new_state.dE = this->state[*previous_state].dE + event_state.dE_final;
   } else {
     new_state.dE = 0.0;
   }
@@ -64,10 +120,11 @@ void StateGraph::save_state(config_type const &config,
   new_state.total_rate = event_selector.total_rate();
 
   // -- Add edge --
-  if (state_init.has_value()) {
+  if (previous_state.has_value()) {
+    EventState const &event_state = *selected_event.event_state;
     this->edge.emplace_back();
     Edge &new_edge = this->edge.back();
-    new_edge.state_init = *state_init;
+    new_edge.state_init = *previous_state;
     new_edge.state_final = new_state_index;
     new_edge.rate_init_to_final = event_state.rate;
     new_edge.rate_final_to_init = event_state.reverse_rate;

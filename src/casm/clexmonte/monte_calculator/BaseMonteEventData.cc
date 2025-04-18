@@ -74,8 +74,8 @@ void EventStateCalculator::set(state_type const *state) {
     _check_coeffs(m_kra_index, "kra");
     _check_coeffs(m_freq_index, "freq");
   } else if (m_calc_method == CALCMETHOD::CLEX_ENTROPY) {
-    _check_coeffs(m_Ekra_index, "Ekra");
-    _check_coeffs(m_Skra_index, "Skra");
+    _check_coeffs(m_Ef_kra_index, "Ef_kra");
+    _check_coeffs(m_S_kra_index, "S_kra");
   }
 }
 
@@ -151,8 +151,8 @@ void EventStateCalculator::_default_event_state_calculation(
     state.formation_energy_delta_corr =
         &m_formation_energy_clex->correlations().occ_delta(
             linear_site_index, prim_event_data.occ_final);
-    state.dE_final = m_formation_energy_clex->coefficients() *
-                     (*state.formation_energy_delta_corr);
+    state.dEf_final = m_formation_energy_clex->coefficients() *
+                      (*state.formation_energy_delta_corr);
 
     // calculate KRA and attempt frequency
     // - add save pointer to local correlations
@@ -161,25 +161,35 @@ void EventStateCalculator::_default_event_state_calculation(
     for (int i = 0; i < m_event_clex->coefficients().size(); ++i) {
       m_event_values(i) = m_event_clex->coefficients()[i] * (*state.local_corr);
     }
-    state.Ekra = m_event_values[m_kra_index];
+    state.Ef_kra = m_event_values[m_kra_index];
     state.freq = m_event_values[m_freq_index];
+    state.reverse_freq = state.freq;
 
     // calculate energy in activated state, check if "normal", calculate rate
-    state.dE_activated = state.dE_final * 0.5 + state.Ekra;
+    state.dEf_activated = state.dEf_final * 0.5 + state.Ef_kra;
+
+    //
+    state.dE_activated = state.dEf_activated;
+    state.dE_final = state.dEf_final;
+
     state.is_normal =
         (state.dE_activated > 0.0) && (state.dE_activated > state.dE_final);
     if (state.dE_activated < state.dE_final)
       state.dE_activated = state.dE_final;
     if (state.dE_activated < 0.0) state.dE_activated = 0.0;
 
+    // rate = freq * exp(-beta * dEf_activated)
+    //      = freq * exp(-beta * dE_activated)
+    // reverse_rate = reverse_freq * exp(-beta * (dEf_activated - dEf_final))
+    //              = reverse_rate * exp(beta * (dE_activated - dE_final))
+
     // calculate rate
     state.rate = state.freq * exp(-this->beta() * state.dE_activated);
 
-    // change in free energy & reverse rate
-    state.d_generalized_enthalpy_activated = state.dE_activated;
-    state.d_generalized_enthalpy_final = state.dE_final;
+    // calculate reverse rate
     state.reverse_rate =
-        state.rate * exp(this->beta() * state.d_generalized_enthalpy_final);
+        state.reverse_freq *
+        exp(-this->beta() * (state.dE_activated - state.dE_final));
 
   } else if (m_calc_method == CALCMETHOD::CLEX_ENTROPY) {
     // calculate change in energy and entropy to final state
@@ -187,50 +197,65 @@ void EventStateCalculator::_default_event_state_calculation(
     state.formation_energy_delta_corr =
         &m_formation_energy_clex->correlations().occ_delta(
             linear_site_index, prim_event_data.occ_final);
-    state.dE_final = m_formation_energy_clex->coefficients() *
-                     (*state.formation_energy_delta_corr);
+    state.dEf_final = m_formation_energy_clex->coefficients() *
+                      (*state.formation_energy_delta_corr);
     state.entropy_delta_corr = &m_entropy_clex->correlations().occ_delta(
         linear_site_index, prim_event_data.occ_final);
     state.dS_final =
         m_entropy_clex->coefficients() * (*state.entropy_delta_corr);
 
-    // calculate Ekra and Skra
+    // calculate Ef_kra and S_kra
     // - add save pointer to local correlations
     state.local_corr = &m_event_clex->correlations().local(
         unitcell_index, prim_event_data.equivalent_index);
     for (int i = 0; i < m_event_clex->coefficients().size(); ++i) {
       m_event_values(i) = m_event_clex->coefficients()[i] * (*state.local_corr);
     }
-    state.Ekra = m_event_values[m_Ekra_index];
-    state.Skra = m_event_values[m_Skra_index];
+    state.Ef_kra = m_event_values[m_Ef_kra_index];
+    state.S_kra = m_event_values[m_S_kra_index];
 
     // calculate energy in activated state, check if "normal", calculate rate
-    state.dE_activated = state.dE_final * 0.5 + state.Ekra;
-    state.dS_activated = state.dS_final * 0.5 + state.Skra;
+    state.dEf_activated = state.dEf_final * 0.5 + state.Ef_kra;
+    state.dS_activated = state.dS_final * 0.5 + state.S_kra;
+
+    //
+    state.dE_activated =
+        state.dEf_activated - this->temperature() * state.dS_activated;
+    state.dE_final = state.dEf_final - this->temperature() * state.dS_final;
+
     state.is_normal =
         (state.dE_activated > 0.0) && (state.dE_activated > state.dE_final);
     if (state.dE_activated < state.dE_final) {
       state.dE_activated = state.dE_final;
-      state.dS_activated = state.dS_final;
     }
     if (state.dE_activated < 0.0) {
       state.dE_activated = 0.0;
-      state.dS_activated = 0.0;
     }
 
+    // rate = (kT/h) * exp(beta * T * dS_activated) * exp(-beta * dEf_activated)
+    //      = (kT/h) * exp(-beta * (dEf_activated - T * dS_activated))
+    //      = (kT/h) * exp(-beta * dE_activated)
+    // reverse_rate = (kT/h) * exp(beta * T * (dS_activated-dS_final))
+    //                * exp(-beta * (dEf_activated - dEf_final))
+    // reverse_rate = (kT/h) * exp(
+    //   -beta * (
+    //     (dEf_activated - T * dS_activated) - (dEf_final - T * dS_final)
+    //   )
+    // )
+    //              = (kT/h) * exp(-beta * (dE_activated - dE_final))
+
+    // calculate attempt frequency
     state.freq =
         (this->kT() / CASM::PLANCK) * exp(state.dS_activated / CASM::KB);
+    state.reverse_freq = (this->kT() / CASM::PLANCK) *
+                         exp((state.dS_activated - state.dS_final) / CASM::KB);
 
     // calculate rate
-    state.rate = state.freq * exp(-this->beta() * state.dE_activated);
+    double prefactor = this->kT() / CASM::PLANCK;
+    state.rate = prefactor * exp(-this->beta() * state.dE_activated);
 
-    // change in free energy & reverse rate
-    state.d_generalized_enthalpy_activated =
-        state.dE_activated - this->temperature() * state.dS_activated;
-    state.d_generalized_enthalpy_final =
-        state.dE_final - this->temperature() * state.dS_final;
     state.reverse_rate =
-        state.rate * exp(this->beta() * state.d_generalized_enthalpy_final);
+        prefactor * exp(-this->beta() * (state.dE_activated - state.dE_final));
 
   } else {
     throw std::runtime_error(

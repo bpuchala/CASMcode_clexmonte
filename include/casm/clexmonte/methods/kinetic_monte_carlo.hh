@@ -430,19 +430,18 @@ void kinetic_monte_carlo_v2(
     // --
 
     // Select an event. This function:
+    // - Re-group events if necessary due to previous selected event
     // - Updates rates of events impacted by the previous selected event (if
     //   there was a previous event)
     // - Updates the total rate
     // - If saving states, saves state
     // - Chooses an event and time increment (does not apply event)
-    // - Sets a list of impacted events by the chosen event that will be
+    // - Set a list of impacted events by the chosen event that will be
     //   updated on the next iteration
-    // - If `requires_event_state` is true, then the event state is calculated
-    //   for the selected event
     begin_section<DebugMode>("Select an event");
     set_selected_event_f(selected_event);
     end_section<DebugMode>();
-    event_time = kmc_data.time + selected_event.time_increment;
+    event_time = selected_event.time;
 
     // Sample data, if a sample is due by time
     // - This location correctly handles sampling at sample times >= 0
@@ -489,6 +488,11 @@ void kinetic_monte_carlo_v2(
     }
     end_section<DebugMode>();
 
+    // Prepare to apply event & sample selected event data:
+    // - If saving states, set state to exit state
+    // - If `requires_event_state` is true, then the event state is calculated
+    //   for the selected event
+
     // Collect selected event data
     begin_section<DebugMode>("Evaluate selected event functions");
     if (collect_selected_event_data) {
@@ -497,22 +501,33 @@ void kinetic_monte_carlo_v2(
     }
     end_section<DebugMode>();
 
-    // If saving states -
-    // - Set state to exit state
+    // If using event groups:
+    // - Restore the selected group to exit state
+    // - Set the impacted events & groups
+    // - Evolve impacted groups to the event time
+    // - Regroup impacted events as necessary
+    //   - If a new group, add initial state
+    //   - Add current site and event information for existing states
+    // - Clear the impacted events
 
     // Apply event
     begin_section<DebugMode>("Apply selected event");
     occ_location.apply(selected_event.event_data->event, get_occupation(state));
     end_section<DebugMode>();
 
-    // Set the impacted events which need to be updated for the next iteration
+    // If not using event groups:
+    // - Set the impacted events
+    // - Update event rates
+    // - Clear the impacted events
+    // If using event groups:
+    // - Set the impacted events
+    // - Update event rates
+    // - Clear the impacted events
+    // - Save new state(s) & transition(s) / Remove old state(s) & transition(s)
+    // - Select next event for new and impacted groups
     begin_section<DebugMode>("Set impacted events");
     set_impacted_events_f(selected_event);
     end_section<DebugMode>();
-
-    // If saving states -
-    // - Add mutated sites to reference state
-    // - Add impacted events to reference state
 
     // Sample data, if a sample is due by count
     // - This location correctly handles sampling at count=0 and count!=0

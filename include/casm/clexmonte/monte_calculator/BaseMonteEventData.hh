@@ -41,9 +41,10 @@ enum class CALCMETHOD { CONST_ENTROPY, CLEX_ENTROPY, INVALID };
 ///   - This requires "kra" and "freq" local cluster expansions for each event.
 /// - `CALCMETHOD::CLEX_ENTROPY`: uses a cluster expansion for the vibrational
 ///   entropy and a local cluster expansion for the kinetically-resolved
-///   activation entropy, Skra.
+///   activation entropy, S_kra.
 ///   - This is used if an "entropy" cluster expansion is found.
-///   - This requires "Ekra" and "Skra" local cluster expansions for each event.
+///   - This requires "Ef_kra" and "S_kra" local cluster expansions for each
+///   event.
 class EventStateCalculator {
  public:
   /// \brief Constructor
@@ -150,12 +151,12 @@ class EventStateCalculator {
   Index freq_index() const { return m_freq_index; }
 
   /// The index of the event multi-local cluster expansion output that
-  /// corresponds to the Ekra value
-  Index Ekra_index() const { return m_Ekra_index; }
+  /// corresponds to the Ef_kra value
+  Index Ef_kra_index() const { return m_Ef_kra_index; }
 
   /// The index of the event multi-local cluster expansion output that
-  /// corresponds to the Skra value
-  Index Skra_index() const { return m_Skra_index; }
+  /// corresponds to the S_kra value
+  Index S_kra_index() const { return m_S_kra_index; }
 
   /// Get the attempt frequency coefficients for a specific event
   clexulator::SparseCoefficients const &freq_coefficients() const {
@@ -175,22 +176,22 @@ class EventStateCalculator {
     return m_event_clex->coefficients()[m_kra_index];
   }
 
-  /// Get the Ekra coefficients for a specific event
-  clexulator::SparseCoefficients const &Ekra_coefficients() const {
+  /// Get the Ef_kra coefficients for a specific event
+  clexulator::SparseCoefficients const &Ef_kra_coefficients() const {
     if (m_event_clex == nullptr) {
       throw std::runtime_error(
-          "EventStateCalculator::Ekra_coefficients: m_event_clex == nullptr");
+          "EventStateCalculator::Ef_kra_coefficients: m_event_clex == nullptr");
     }
-    return m_event_clex->coefficients()[m_Ekra_index];
+    return m_event_clex->coefficients()[m_Ef_kra_index];
   }
 
-  /// Get the Skra coefficients for a specific event
-  clexulator::SparseCoefficients const &Skra_coefficients() const {
+  /// Get the S_kra coefficients for a specific event
+  clexulator::SparseCoefficients const &S_kra_coefficients() const {
     if (m_event_clex == nullptr) {
       throw std::runtime_error(
-          "EventStateCalculator::Skra_coefficients: m_event_clex == nullptr");
+          "EventStateCalculator::S_kra_coefficients: m_event_clex == nullptr");
     }
-    return m_event_clex->coefficients()[m_Skra_index];
+    return m_event_clex->coefficients()[m_S_kra_index];
   }
 
  private:
@@ -224,8 +225,8 @@ class EventStateCalculator {
   Index m_freq_index;
 
   // -- CALCMETHOD::CLEX_ENTROPY: --
-  Index m_Ekra_index;
-  Index m_Skra_index;
+  Index m_Ef_kra_index;
+  Index m_S_kra_index;
 
   /// If true, use custom event state calculation function
   bool m_custom_event_state_calculation;
@@ -462,20 +463,6 @@ class BaseMonteEventData {
   /// \brief Various options, that control event handling (if applicable)
   virtual EventDataOptions const &event_data_options() const = 0;
 
-  // -- System data --
-
-  /// Get the formation energy coefficients
-  virtual clexulator::SparseCoefficients const &formation_energy_coefficients()
-      const = 0;
-
-  /// Get the attempt frequency coefficients for a specific event
-  virtual clexulator::SparseCoefficients const &freq_coefficients(
-      Index prim_event_index) const = 0;
-
-  /// Get the KRA coefficients for a specific event
-  virtual clexulator::SparseCoefficients const &kra_coefficients(
-      Index prim_event_index) const = 0;
-
   // -- Customize event state calculation and handling functions --
 
   /// \brief Set a custom event state calculation function
@@ -525,9 +512,10 @@ class BaseMonteEventData {
       std::shared_ptr<engine_type> engine) = 0;
 
   virtual void run(state_type &state, monte::OccLocation &occ_location,
-                   kmc_data_type &kmc_data, SelectedEvent &selected_event,
+                   SelectedEvent &selected_event,
                    std::optional<monte::SelectedEventDataCollector> &collector,
                    run_manager_type &run_manager,
+                   std::shared_ptr<kmc_data_type> _kmc_data,
                    std::shared_ptr<occ_events::OccSystem> event_system) = 0;
 
   // -- Select Event --
