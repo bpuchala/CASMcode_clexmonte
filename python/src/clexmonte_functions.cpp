@@ -72,9 +72,11 @@ PYBIND11_MODULE(_clexmonte_functions, m) {
                 "composition_calculator is None and system is None");
           }
           bool update_atoms = false;
+          bool track_unique_atom_ids = false;
           bool save_atom_info = false;
           make_temporary_if_necessary(state, occ_location, tmp, *system,
-                                      update_atoms, save_atom_info);
+                                      update_atoms, track_unique_atom_ids,
+                                      save_atom_info);
         }
 
         // Need a composition calculator

@@ -61,6 +61,7 @@ class BaseMonteCalculator {
                                std::set<std::string> _required_params,
                                std::set<std::string> _optional_params,
                                bool _time_sampling_allowed, bool _update_atoms,
+                               bool _track_unique_atom_ids,
                                bool _save_atom_info,
                                bool _is_multistate_method);
 
@@ -92,7 +93,12 @@ class BaseMonteCalculator {
   /// Method tracks species locations? (like in KMC)
   bool update_atoms;
 
-  /// Method saves atom initial / final info? (like in KMC)
+  /// Method tracks all atoms added / removed from supercell? (KMC with
+  /// deposition / dissolution)
+  bool track_unique_atom_ids;
+
+  /// Method saves atom initial / final info? (KMC with deposition /
+  ///     dissolution)
   bool save_atom_info;
 
   // --- Set via `reset` method: ---

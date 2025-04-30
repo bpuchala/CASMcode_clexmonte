@@ -3,6 +3,7 @@
 
 #include "casm/clexmonte/events/AllowedEventList.hh"
 #include "casm/clexmonte/events/CompleteEventList.hh"
+#include "casm/clexmonte/events/EventGroup.hh"
 #include "casm/clexmonte/events/event_methods.hh"
 #include "casm/clexmonte/events/lotto.hh"
 #include "casm/clexmonte/events/state_graph.hh"
@@ -334,6 +335,69 @@ class CompleteKineticEventData : public BaseMonteEventData {
   mutable EventState m_event_state;
 };
 
+// -- EventGroupManager --
+
+struct SavedEventData {
+  double rate;
+  double dE_activated;
+
+  SavedEventData() : rate(0.0), dE_activated(0.0) {}
+
+  void reset() {
+    rate = 0.0;
+    dE_activated = 0.0;
+  }
+};
+
+struct SavedSiteData {
+  /// \brief Occupation of the site in each state
+  int occ;
+
+  /// \brief Component Atom ID of the Mol of the site
+  std::vector<Index> atom_id;
+
+  /// \brief Component Atom of the Mol of the site
+  std::vector<monte::Atom> atom;
+
+  SavedSiteData() : occ(-1) {}
+
+  void reset() {
+    occ = -1;
+    atom_id.clear();
+    atom.clear();
+  }
+};
+
+struct SavedStateData {
+  double dE;
+
+  SavedStateData() : dE(0.0) {}
+
+  void reset() { dE = 0.0; }
+};
+
+/// \brief Save the occupation and location info for a state
+void save(Index linear_site_index, SavedSiteData &site_data,
+          StateData const &state_data);
+
+/// \brief Restore the occupation and location info for a state
+void restore(Index linear_site_index, SavedSiteData const &site_data,
+             StateData &state_data);
+
+/// \brief Check if the saved occupation matches the current occupation
+///     (indistinguishable occupant comparison, not tracer / atom id equality)
+bool is_equal(Index linear_site_index, SavedSiteData const &site_data,
+              StateData const &state_data);
+
+template <bool DebugMode>
+using EventGroup =
+    event_group::EventGroup<SavedEventData, SavedSiteData, SavedStateData,
+                            StateData, DebugMode>;
+
+template <bool DebugMode>
+using EventGroupManager =
+    event_group::EventGroupManager<EventGroup<DebugMode>, DebugMode>;
+
 /// \brief AllowedEventCalculator is an event calculator with the required
 /// interface for the
 ///     classes `lotto::RejectionFree` and `lotto::Rejection`.
@@ -353,8 +417,8 @@ struct AllowedEventCalculator {
   /// \brief Allowed event list
   AllowedEventList &event_list;
 
-  /// \brief Event groups
-  std::vector<std::shared_ptr<event_group::EventGroup<DebugMode>>> &event_group;
+  /// \brief Event group manager - for saving states and KMC acceleration
+  std::shared_ptr<EventGroupManager<DebugMode>> event_group_manager;
 
   // Note: to keep all event state calculations, comment out this:
   /// \brief Holds last calculated event state
@@ -369,11 +433,6 @@ struct AllowedEventCalculator {
   /// \brief Count not-normal events (key == event_type_name; value == count)
   std::map<std::string, Index> &n_encountered_abnormal;
 
-  //  /// \brief Event site linear indices
-  //  ///
-  //  /// Used temporarily to calculate event state
-  //  std::vector<Index> linear_site_index;
-
   /// \brief Event data
   ///
   /// Used temporarily to set the monte::OccEvent used to apply a selected
@@ -384,8 +443,7 @@ struct AllowedEventCalculator {
       std::vector<PrimEventData> const &_prim_event_list,
       std::vector<EventStateCalculator> const &_prim_event_calculators,
       AllowedEventList &_event_list,
-      std::vector<std::shared_ptr<event_group::EventGroup<DebugMode>>>
-          &_event_group,
+      std::shared_ptr<EventGroupManager<DebugMode>> _event_group_manager,
       bool _abnormal_event_handling_on,
       AbnormalEventHandlingFunction &_handling_f,
       std::map<std::string, Index> &_n_encountered_abnormal);
@@ -503,18 +561,8 @@ class AllowedKineticEventData : public BaseMonteEventData {
 
   // -- State saving options & data --
 
-  /// \brief If true, use `event_group`
-  bool use_event_groups;
-
-  /// \brief If `use_event_groups` is true, this is the next event group
-  ///     selected to occur
-  Index next_event_group;
-
-  /// \brief Event groups for state saving and first passage time analysis
-  std::vector<std::shared_ptr<event_group::EventGroup<DebugMode>>> event_group;
-
-  /// \brief The current event groups
-  std::set<Index> current_groups;
+  /// \brief Event group manager - for saving states and KMC acceleration
+  std::shared_ptr<EventGroupManager<DebugMode>> event_group_manager;
 
   // -- Event selector options --
 
@@ -607,46 +655,10 @@ class AllowedKineticEventData : public BaseMonteEventData {
 
   // --- Event selection ---
 
-  /// \brief Set the impacted events based on the selected event and handle
-  ///     the consequences
-  void set_impacted_events(SelectedEvent &selected_event);
-
   /// \brief Select an event, and optionally re-calculate event state for the
   ///     selected event
   void select_event(SelectedEvent &selected_event,
                     bool requires_event_state) override;
-
-  /// \brief Find and regroup impacted events
-  void regroup_impacted_events();
-
-  /// \brief Get the current number of groups (includes group 0)
-  Index n_groups();
-
-  /// \brief Construct and add a new event group
-  Index add_group();
-
-  /// \brief Add events to the specified event group
-  void add_events_to_group(std::vector<Index> const &event_indices,
-                           Index group);
-
-  /// \brief Select the next event for specified event groups
-  void select_next_event_for(std::set<Index> const &groups);
-
-  /// \brief Resolve which state all groups are in at the specified time,
-  ///    under the assumption that they only transition between transient
-  ///    states in the current chain
-  void resolve_state(monte::TimeType time);
-
-  /// \brief Resolve which state specified groups are in at the specified time,
-  ///    under the assumption that they only transition between transient
-  ///    states in the current chain
-  void resolve_state_for(monte::TimeType time, std::set<Index> const &groups);
-
-  /// \brief Delete specified event groups
-  void delete_groups(std::set<Index> const &groups);
-
-  /// \brief Set `next_event_group` by finding which group moves next
-  void set_next_event_group();
 
   // -- Event list summary info --
 

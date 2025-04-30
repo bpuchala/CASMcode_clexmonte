@@ -32,14 +32,15 @@ std::vector<Index> make_atom_name_index_list(
     occ_events::OccSystem const &occ_system);
 
 template <bool DebugMode, typename ConfigType,
-          typename SetSelectedEventFunction, typename SetImpactedEvenstFunction,
-          typename StatisticsType, typename EngineType>
+          typename SetSelectedEventFunction,
+          typename ApplySelectedEventFunction, typename StatisticsType,
+          typename EngineType>
 void kinetic_monte_carlo_v2(
     state_type &state, monte::OccLocation &occ_location,
     monte::KMCData<ConfigType, StatisticsType, EngineType> &kmc_data,
     SelectedEvent &selected_event,
     SetSelectedEventFunction set_selected_event_f,
-    SetImpactedEvenstFunction set_impacted_events_f,
+    ApplySelectedEventFunction apply_selected_event_f,
     std::optional<monte::SelectedEventDataCollector> &collector,
     monte::RunManager<ConfigType, StatisticsType, EngineType> &run_manager,
     std::shared_ptr<occ_events::OccSystem> event_system);
@@ -296,9 +297,10 @@ inline std::vector<Index> make_atom_name_index_list(
 /// \param set_selected_event_f A function that can set `selected_event` with
 ///     signature `set_selected_event_f(SelectedEvent &selected_event, bool
 ///     requires_event_state)`.
-/// \param set_impacted_events_f A function that can set the impacted events
-///     based on the selected event, after the event has been applied, with
-///     signature `set_impacted_events_f(SelectedEvent &selected_event)`.
+/// \param apply_selected_event_f A function that can apply the selected event
+///     and prepare to select the next event, with
+///     signature `apply_selected_event_f(state_type &state,
+///     monte::OccLocation &occ_location, SelectedEvent &selected_event)`.
 /// \param collector Collects selected event data
 /// \param run_manager Contains sampling fixtures and after completion holds
 ///     final results
@@ -317,14 +319,15 @@ inline std::vector<Index> make_atom_name_index_list(
 /// - None
 ///
 template <bool DebugMode, typename ConfigType,
-          typename SetSelectedEventFunction, typename SetImpactedEvenstFunction,
-          typename StatisticsType, typename EngineType>
+          typename SetSelectedEventFunction,
+          typename ApplySelectedEventFunction, typename StatisticsType,
+          typename EngineType>
 void kinetic_monte_carlo_v2(
     state_type &state, monte::OccLocation &occ_location,
     monte::KMCData<ConfigType, StatisticsType, EngineType> &kmc_data,
     SelectedEvent &selected_event,
     SetSelectedEventFunction set_selected_event_f,
-    SetImpactedEvenstFunction set_impacted_events_f,
+    ApplySelectedEventFunction apply_selected_event_f,
     std::optional<monte::SelectedEventDataCollector> &collector,
     monte::RunManager<ConfigType, StatisticsType, EngineType> &run_manager,
     std::shared_ptr<occ_events::OccSystem> event_system) {
@@ -430,14 +433,11 @@ void kinetic_monte_carlo_v2(
     // --
 
     // Select an event. This function:
-    // - Re-group events if necessary due to previous selected event
-    // - Updates rates of events impacted by the previous selected event (if
-    //   there was a previous event)
-    // - Updates the total rate
-    // - If saving states, saves state
-    // - Chooses an event and time increment (does not apply event)
-    // - Set a list of impacted events by the chosen event that will be
-    //   updated on the next iteration
+    // - If no event groups:
+    //   - Select event from event selector
+    // - If event groups:
+    //   - Select event by finding the group with minimum next event time
+    // - Sets the `selected_event` object with the next event and time
     begin_section<DebugMode>("Select an event");
     set_selected_event_f(selected_event);
     end_section<DebugMode>();
@@ -449,6 +449,15 @@ void kinetic_monte_carlo_v2(
     //   sample time <= the event time
     // - If the sample time is exactly equal to the event time (should be
     //   vanishingly rare), then the state before the event occurs is sampled.
+    // - While next event time > next sample time:
+    //   - If no event groups:
+    //     - Set current time to sample time
+    //     - Sample
+    //   - If event groups: (TODO)
+    //     - Resolve state at current time
+    //     - Sample
+    //     - Calculate next event & time for each group
+    //     - Select next event
     begin_section<DebugMode>("Sample by time, if due");
     run_manager.template sample_data_by_time_if_due<DebugMode>(
         event_time, state, pre_sample_action, post_sample_action);
@@ -488,19 +497,6 @@ void kinetic_monte_carlo_v2(
     }
     end_section<DebugMode>();
 
-    // Prepare to apply event & sample selected event data:
-    // - If saving states, set state to exit state
-    // - If `requires_event_state` is true, then the event state is calculated
-    //   for the selected event
-
-    // Collect selected event data
-    begin_section<DebugMode>("Evaluate selected event functions");
-    if (collect_selected_event_data) {
-      debug_collect<DebugMode>(collector.value());
-      collector->collect();
-    }
-    end_section<DebugMode>();
-
     // If using event groups:
     // - Restore the selected group to exit state
     // - Set the impacted events & groups
@@ -509,12 +505,8 @@ void kinetic_monte_carlo_v2(
     //   - If a new group, add initial state
     //   - Add current site and event information for existing states
     // - Clear the impacted events
-
+    // Evaluate selected event functions
     // Apply event
-    begin_section<DebugMode>("Apply selected event");
-    occ_location.apply(selected_event.event_data->event, get_occupation(state));
-    end_section<DebugMode>();
-
     // If not using event groups:
     // - Set the impacted events
     // - Update event rates
@@ -525,14 +517,18 @@ void kinetic_monte_carlo_v2(
     // - Clear the impacted events
     // - Save new state(s) & transition(s) / Remove old state(s) & transition(s)
     // - Select next event for new and impacted groups
-    begin_section<DebugMode>("Set impacted events");
-    set_impacted_events_f(selected_event);
+    begin_section<DebugMode>("Apply selected event");
+    apply_selected_event_f(state, occ_location, selected_event);
     end_section<DebugMode>();
 
     // Sample data, if a sample is due by count
     // - This location correctly handles sampling at count=0 and count!=0
     // - If the sample count is n, then the state after the n-th step/pass is
     //   sampled.
+    // - If count == next sample count:
+    //   - If event groups: Resolve state at current time
+    //   - Sample
+    //   - If event groups: Calculate next event & time for each group
     begin_section<DebugMode>("Sample by count, if due");
     run_manager.template sample_data_by_count_if_due<DebugMode>(
         state, pre_sample_action, post_sample_action);

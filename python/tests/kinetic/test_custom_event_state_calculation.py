@@ -179,8 +179,9 @@ def test_custom_event_state_calculation_f(FCCBinaryVacancy_runner):
     - 12 possible 1NN Va hops in FCC
     - 1 selected event state calculation (for handling selected events without barriers)
     - 100 steps
+    - 1 step calculated but not applied
 
-    -> (12 + 1) * 100 = 1300 expected calls
+    -> (12 + 1) * 100 + 12 = 1312 expected calls
 
     Expected number of selected events: 100
 
@@ -198,5 +199,5 @@ def test_custom_event_state_calculation_f(FCCBinaryVacancy_runner):
 
     # n_event_calculations is incremented for every allowed event rate update...
     # so at least 100
-    assert runner.n_event_calculations == 1300
+    assert runner.n_event_calculations == 1312
     assert runner.n_selected_events == 100

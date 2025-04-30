@@ -25,21 +25,10 @@ class OccLocation;
 namespace clexmonte {
 
 struct AllowedEventData {
-  AllowedEventData()
-      : is_assigned(false), event_id(-1, -1), group(-1), index_in_group(-1) {}
+  AllowedEventData() : is_assigned(false), event_id(-1, -1) {}
 
   AllowedEventData(bool is_assigned, EventID event_id)
-      : is_assigned(is_assigned),
-        event_id(event_id),
-        group(-1),
-        index_in_group(-1) {}
-
-  AllowedEventData(bool is_assigned, EventID event_id, Index group,
-                   Index index_in_group)
-      : is_assigned(is_assigned),
-        event_id(event_id),
-        group(group),
-        index_in_group(index_in_group) {}
+      : is_assigned(is_assigned), event_id(event_id) {}
 
   /// \brief Whether the event_id is assigned
   bool is_assigned;
@@ -48,15 +37,6 @@ struct AllowedEventData {
   ///
   /// This may be in an invalid state if `is_assigned` is false.
   EventID event_id;
-
-  /// \brief The EventGroup containing the event
-  ///
-  /// - group==0 is special "ungrouped" group: events are not added to
-  ///   EventGroup.event for this group
-  Index group;
-
-  /// \brief The index of the event in EventGroup.event (if group!=0)
-  Index index_in_group;
 };
 
 /// \brief Data structure storing mapping between EventIDs and event index into
@@ -148,26 +128,6 @@ class AllowedEventMap {
     return m_events[index].event_id;
   }
 
-  /// \brief Get the EventGroup index from event index (undefined out of range)
-  Index event_group(Index index) const { return m_events[index].group; }
-
-  /// \brief Get the The index of the event in EventGroup.event from event index
-  ///     (undefined out of range)
-  Index event_index_in_group(Index index) const {
-    return m_events[index].index_in_group;
-  }
-
-  /// \brief Set the EventGroup index and EventGroup.event index (undefined out
-  /// of range)
-  void set_event_group(Index index, Index group) {
-    m_events[index].group = group;
-  }
-
-  /// \brief Set the EventGroup.event index (undefined out of range)
-  void set_event_index_in_group(Index index, Index index_in_group) {
-    m_events[index].index_in_group = index_in_group;
-  }
-
   /// \brief Get the index of an assigned event (undefined if not assigned)
   Index event_index(EventID const &event_id) const {
     if (m_use_map_index) {
@@ -246,19 +206,6 @@ class AllowedEventMap {
     return index;
   }
 
-  /// \brief Assign an event ID to an event index and set group and
-  /// index_in_group
-  ///
-  /// Calls `assign(EventID const &event_id)`, then sets group and
-  /// index_in_group
-  Index assign(EventID const &event_id, Index group, Index index_in_group) {
-    Index index = assign(event_id);
-    AllowedEventData &event_data = m_events[index];
-    event_data.group = group;
-    event_data.index_in_group = index_in_group;
-    return index;
-  }
-
   /// \brief Assign an event ID to an event index
   ///
   /// - This overload uses an existing `find` result to avoid a second lookup
@@ -285,20 +232,6 @@ class AllowedEventMap {
     event_data.event_id = event_id;
     m_n_assigned++;
     m_available.pop_back();
-    return index;
-  }
-
-  /// \brief Assign an event ID to an event index
-  ///
-  /// - This overload uses an existing `find` result to avoid a second lookup
-  /// - Calls `assign(std::vector<AllowedEventData>::const_iterator it,
-  ///   EventID const &event_id)`, then sets group and index_in_group
-  Index assign(std::vector<AllowedEventData>::const_iterator it,
-               EventID const &event_id, Index group, Index index_in_group) {
-    Index index = assign(it, event_id);
-    AllowedEventData &event_data = m_events[index];
-    event_data.group = group;
-    event_data.index_in_group = index_in_group;
     return index;
   }
 

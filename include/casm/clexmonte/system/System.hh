@@ -509,6 +509,7 @@ void make_temporary_if_necessary(state_type const &state,
                                  monte::OccLocation *&occ_location,
                                  std::unique_ptr<monte::OccLocation> &tmp,
                                  System &system, bool update_atoms,
+                                 bool track_unique_atom_ids,
                                  bool save_atom_info);
 
 }  // namespace clexmonte

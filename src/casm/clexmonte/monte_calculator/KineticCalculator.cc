@@ -87,6 +87,7 @@ KineticCalculator::KineticCalculator()
            "selected_event_data", "state_graph"},  // optional_params,
           true,                                    // time_sampling_allowed,
           true,                                    // update_atoms,
+          false,                                   // track_unique_atom_ids,
           false,                                   // save_atom_info,
           false                                    // is_multistate_method,
       ) {

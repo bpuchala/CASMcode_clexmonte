@@ -230,6 +230,7 @@ class SemiGrandCanonicalCalculator : public BaseMonteCalculator {
                             {},                    // optional_params,
                             false,                 // time_sampling_allowed,
                             false,                 // update_atoms,
+                            false,                 // track_unique_atom_ids,
                             false,                 // save_atom_info,
                             false                  // is_multistate_method,
         ) {}

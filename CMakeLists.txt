@@ -131,7 +131,6 @@ set(
   ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/events/lotto/sum_tree.hpp
   ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/events/lotto/sum_tree_impl.hpp
   ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/events/state_graph.hh
-  ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/events/state_graph_impl.hh
   ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/kinetic/io/json/EventState_json_io.hh
   ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/kinetic/io/stream/EventState_stream_io.hh
   ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/kinetic/kinetic.hh
@@ -140,6 +139,7 @@ set(
   ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/kinetic/kinetic_json_io.hh
   ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/methods/kinetic_monte_carlo.hh
   ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/methods/occupation_metropolis.hh
+  ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/misc/MapLike.hh
   ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/misc/Matrix3lCompare.hh
   ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/misc/check_params.hh
   ${PROJECT_SOURCE_DIR}/include/casm/clexmonte/misc/diffusion_calculations.hh

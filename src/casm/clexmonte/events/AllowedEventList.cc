@@ -71,8 +71,6 @@ AllowedEventList::AllowedEventList(
   }
 
   // Assign allowed events to `allowed_event_map`
-  Index group = 0;
-  Index index_in_group = -1;
   Index max_n_impacted = 0;
   std::vector<Index> linear_site_index;
   for (Index unitcell_index = 0; unitcell_index < n_unitcells;
@@ -92,7 +90,7 @@ AllowedEventList::AllowedEventList(
         EventID event_id(prim_event_index, unitcell_index);
 
         // assign event
-        allowed_event_map.assign(event_id, group, index_in_group);
+        allowed_event_map.assign(event_id);
       }
     }
   }
@@ -125,9 +123,6 @@ std::vector<Index> const &AllowedEventList::make_impact_list(
   if (assign_allowed_events_only) {
     // approach 1: include assigned events,
     // and only assign new events that are allowed
-    Index group = 0;
-    Index index_in_group = -1;
-
     static std::vector<Index> linear_site_index;
     for (auto const &event_id : impacted_event_ids) {
       // check if already assigned
@@ -147,19 +142,14 @@ std::vector<Index> const &AllowedEventList::make_impact_list(
             this->neighbor_index[event_id.prim_event_index], *supercell_nlist);
         if (event_is_allowed(linear_site_index, dof_values, prim_event_data)) {
           // assign event
-          this->impact_list.push_back(
-              allowed_event_map.assign(it, event_id, group, index_in_group));
+          this->impact_list.push_back(allowed_event_map.assign(it, event_id));
         }
       }
     }
   } else {
-    Index group = 0;
-    Index index_in_group = -1;
-
     // approach 2: include all possible impacted events
     for (auto const &event_id : impacted_event_ids) {
-      this->impact_list.push_back(
-          this->allowed_event_map.assign(event_id, group, index_in_group));
+      this->impact_list.push_back(this->allowed_event_map.assign(event_id));
     }
   }
 

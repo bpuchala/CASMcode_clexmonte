@@ -247,9 +247,9 @@ void make_temporary_if_necessary(state_type const &state,
           "occ_location is null and system is null");
     }
     auto &system = *system_ptr;
-    make_temporary_if_necessary(state, occ_location, tmp, system,
-                                calculation.update_atoms(),
-                                calculation.save_atom_info());
+    make_temporary_if_necessary(
+        state, occ_location, tmp, system, calculation.update_atoms(),
+        calculation.track_unique_atom_ids(), calculation.save_atom_info());
   }
 }
 

@@ -15,7 +15,8 @@ BaseMonteCalculator::BaseMonteCalculator(
     std::set<std::string> _required_dof_spaces,
     std::set<std::string> _required_params,
     std::set<std::string> _optional_params, bool _time_sampling_allowed,
-    bool _update_atoms, bool _save_atom_info, bool _is_multistate_method)
+    bool _update_atoms, bool _track_unique_atom_ids, bool _save_atom_info,
+    bool _is_multistate_method)
     : calculator_name(_calculator_name),
       required_basis_set(_required_basis_set),
       required_local_basis_set(_required_local_basis_set),
@@ -28,6 +29,7 @@ BaseMonteCalculator::BaseMonteCalculator(
       optional_params(_optional_params),
       time_sampling_allowed(_time_sampling_allowed),
       update_atoms(_update_atoms),
+      track_unique_atom_ids(_track_unique_atom_ids),
       save_atom_info(_save_atom_info),
       is_multistate_method(_is_multistate_method) {
   // Use the RandomNumberGenerator default constructor to make a

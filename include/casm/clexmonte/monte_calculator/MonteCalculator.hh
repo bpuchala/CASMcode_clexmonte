@@ -78,7 +78,12 @@ class MonteCalculator {
   /// Method tracks atom locations? (like in KMC)
   bool update_atoms() const { return m_calc->update_atoms; }
 
-  /// Method saves atom initial / final info? (like in KMC)
+  /// Method tracks all atoms added / removed from supercell? (KMC with
+  /// deposition / dissolution)
+  bool track_unique_atom_ids() const { return m_calc->track_unique_atom_ids; }
+
+  /// Method saves atom initial / final position info? (KMC with deposition /
+  /// dissolution)
   bool save_atom_info() const { return m_calc->save_atom_info; }
 
   // --- Set at `reset`: ---
